@@ -102,18 +102,21 @@ router.get('/api/v1/check-participant/:prolificPid', async (req, res) => {
 router.post('/api/v1/complete-participant', async (req, res) => {
   const { participantId, prolificPid, completedAt } = req.body
   
-  if (!participantId || !prolificPid) {
+  if (!participantId) {
     return res.status(400).json({ 
-      error: 'Missing required fields: participantId, prolificPid' 
+      error: 'Missing required field: participantId' 
     })
   }
 
   try {
+    // Build where clause - use prolificPid if provided, otherwise just use participantId
+    const whereClause: any = { participantId }
+    if (prolificPid) {
+      whereClause.prolificPid = prolificPid
+    }
+
     const updated = await prisma.participant.updateMany({
-      where: { 
-        participantId,
-        prolificPid
-      },
+      where: whereClause,
       data: { 
         completedAt: completedAt ? new Date(completedAt) : new Date()
       }
@@ -124,10 +127,10 @@ router.post('/api/v1/complete-participant', async (req, res) => {
     }
     
     const participant = await prisma.participant.findFirst({
-      where: { participantId, prolificPid }
+      where: { participantId }
     })
     
-    console.log(`[Backend] Marked participant as completed: ${prolificPid}`)
+    console.log(`[Backend] Marked participant as completed: ${participantId}${prolificPid ? ` (prolificPid: ${prolificPid})` : ''}`)
     return res.status(200).json({ 
       success: true, 
       completedAt: participant?.completedAt 
