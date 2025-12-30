@@ -286,7 +286,7 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
     }
 
      try {
-       const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement.onrender.com"
+       const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com"
        
        // Add timeout to prevent hanging
        const controller = new AbortController()

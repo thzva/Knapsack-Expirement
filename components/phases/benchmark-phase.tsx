@@ -37,7 +37,7 @@ export default function BenchmarkPhase({ onNext, updateParticipantData }: Benchm
   const [participantId, setParticipantId] = useState<string | null>(null)
 
   // API base
-  const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement.onrender.com", [])
+  const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com", [])
 
   // Load participant ID
   useEffect(() => {

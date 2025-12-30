@@ -17,7 +17,7 @@ export const getApiBase = () => {
   // Use NEXT_PUBLIC_API_BASE if set, otherwise fallback to environment-based defaults
   return process.env.NEXT_PUBLIC_API_BASE || 
          (process.env.NODE_ENV === 'production' 
-           ? process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-backend.onrender.com"
+           ? process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com"
            : "http://localhost:8787")
 }
 

@@ -52,7 +52,7 @@ export default function StrategyPhase({ onNext, updateParticipantData, benchmark
   const [currentQuestionStartTime, setCurrentQuestionStartTime] = useState<number | null>(null)
 
   // API base (configure in .env.local as NEXT_PUBLIC_API_BASE=http://localhost:8787)
-  const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement.onrender.com", [])
+  const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com", [])
 
   // Start section timing when phase begins
   useEffect(() => {

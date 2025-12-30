@@ -132,7 +132,7 @@ export class TimeTracker {
 
     try {
       const API_BASE = process.env.NODE_ENV === 'production' 
-        ? "https://knapsack-expirement.onrender.com"
+        ? (process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com")
         : "http://localhost:8787"
 
       const response = await fetch(`${API_BASE}/api/v1/log-time`, {
