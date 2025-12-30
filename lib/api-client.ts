@@ -14,9 +14,10 @@ const pendingRequests = new Map<string, Promise<any>>()
 // Get API base URL (memoized)
 export const getApiBase = () => {
   if (typeof window === 'undefined') return 'http://localhost:8787'
+  // Use NEXT_PUBLIC_API_BASE if set, otherwise fallback to environment-based defaults
   return process.env.NEXT_PUBLIC_API_BASE || 
          (process.env.NODE_ENV === 'production' 
-           ? "https://knapsack-expirement.onrender.com"
+           ? process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-backend.onrender.com"
            : "http://localhost:8787")
 }
 
