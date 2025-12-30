@@ -6,7 +6,7 @@ All code changes have been made and pushed to GitHub:
 - ✅ Frontend API client updated to use `NEXT_PUBLIC_API_BASE`
 - ✅ Backend CORS configuration updated
 - ✅ GitHub Actions workflow updated
-- ✅ Changes committed and pushed to: `https://github.com/Arjav5090/Knapsack-Expirement`
+- ✅ Changes committed and pushed to: `https://github.com/SmitSutariya0205/Knapsack-Expirement`
 
 ---
 
@@ -62,7 +62,7 @@ DIRECT_URL=postgresql://user:password@ep-xxx-xxx.us-east-2.aws.neon.tech/neondb?
    DIRECT_URL=postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require
    PORT=8787
    NODE_ENV=production
-   CORS_ORIGIN=https://arjav5090.github.io,https://arjav5090.github.io/Knapsack-Expirement
+   CORS_ORIGIN=https://smitSutariya0205.github.io,https://smitSutariya0205.github.io/Knapsack-Expirement
    ADMIN_KEY=knapsack-admin-2024-secure
    ```
 
@@ -91,25 +91,25 @@ DIRECT_URL=postgresql://user:password@ep-xxx-xxx.us-east-2.aws.neon.tech/neondb?
 ### Step 3: Configure GitHub Pages
 
 1. **Set GitHub Secret** (for API URL):
-   - Go to: https://github.com/Arjav5090/Knapsack-Expirement/settings/secrets/actions
+   - Go to: https://github.com/SmitSutariya0205/Knapsack-Expirement/settings/secrets/actions
    - Click "New repository secret"
    - **Name**: `NEXT_PUBLIC_API_BASE`
    - **Value**: `https://YOUR_BACKEND_URL.onrender.com` (from Step 2)
    - Click "Add secret"
 
 2. **Enable GitHub Pages**:
-   - Go to: https://github.com/Arjav5090/Knapsack-Expirement/settings/pages
+   - Go to: https://github.com/SmitSutariya0205/Knapsack-Expirement/settings/pages
    - **Source**: Select "GitHub Actions"
    - Click "Save"
 
 3. **Trigger Deployment**:
-   - Go to: https://github.com/Arjav5090/Knapsack-Expirement/actions
+   - Go to: https://github.com/SmitSutariya0205/Knapsack-Expirement/actions
    - You should see "Deploy Next.js site to Pages" workflow
    - If not running, click "Run workflow" → "Run workflow"
    - Wait for deployment (2-5 minutes)
 
 4. **Access Your Site**:
-   - Your site will be at: `https://arjav5090.github.io/Knapsack-Expirement`
+   - Your site will be at: `https://smitSutariya0205.github.io/Knapsack-Expirement`
    - Note: First deployment may take 5-10 minutes
 
 ---
@@ -124,7 +124,7 @@ Invoke-WebRequest -Uri "https://YOUR_BACKEND_URL.onrender.com/health"
 ```
 
 #### Frontend Verification:
-1. Visit: `https://arjav5090.github.io/Knapsack-Expirement`
+1. Visit: `https://smitSutariya0205.github.io/Knapsack-Expirement`
 2. Open browser DevTools (F12) → Network tab
 3. Try to register a participant or interact with the app
 4. Check that API calls are going to your Render backend
@@ -165,7 +165,7 @@ Invoke-WebRequest -Uri "https://YOUR_BACKEND_URL.onrender.com/health"
 
 After deployment, you should have:
 
-- **Frontend**: `https://arjav5090.github.io/Knapsack-Expirement`
+- **Frontend**: `https://smitSutariya0205.github.io/Knapsack-Expirement`
 - **Backend**: `https://YOUR_BACKEND_URL.onrender.com`
 - **Backend Health**: `https://YOUR_BACKEND_URL.onrender.com/health`
 - **Database**: Managed by Neon (no direct URL needed)
