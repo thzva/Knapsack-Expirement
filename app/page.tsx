@@ -109,13 +109,31 @@ export default function KnapsackExperiment() {
     
     // If no Prolific params, create a test participant
     if (!prolificPid || !studyId || !sessionId) {
-      console.log('[TEST MODE] No Prolific params, creating test participant')
-      const testId = window.crypto.randomUUID()
-      setParticipantId(testId)
-      localStorage.setItem('participantId', testId)
-      localStorage.setItem('prolificPid', `test-${testId}`)
-      setAccessAllowed(true)
-      setIsCheckingAccess(false)
+      console.log('[TEST MODE] No Prolific params, registering test participant with backend')
+      // Register with backend to get a valid participantId
+      api.register()
+        .then((data) => {
+          if (cancelled) return
+          const id = data.participantId
+          console.log('[TEST MODE] Test participant registered:', id)
+          setParticipantId(id)
+          localStorage.setItem('participantId', id)
+          localStorage.setItem('prolificPid', `test-${id}`)
+          setAccessAllowed(true)
+          setIsCheckingAccess(false)
+        })
+        .catch((error) => {
+          if (cancelled) return
+          console.error('[TEST MODE] Failed to register test participant:', error)
+          // Fallback: create local ID but warn user
+          const testId = window.crypto.randomUUID()
+          setParticipantId(testId)
+          localStorage.setItem('participantId', testId)
+          localStorage.setItem('prolificPid', `test-${testId}`)
+          setAccessAllowed(true)
+          setIsCheckingAccess(false)
+          console.warn('[TEST MODE] Using local participant ID - backend registration failed')
+        })
       return
     }
     

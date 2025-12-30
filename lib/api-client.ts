@@ -150,6 +150,9 @@ export const api = {
       studyId,
       sessionId,
     }),
+  
+  register: () =>
+    api.post<{ participantId: string }>('/api/v1/register', {}),
 }
 
 // Export axios instance for advanced usage
