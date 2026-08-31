@@ -16,15 +16,15 @@ interface Participant {
   testPractice: any
   testSkill: any
   testBenchmark: any
-  testStrategy: any
   testFinal: any
   timeTracking: any
+  email: string | null
 }
 
 export const router = express.Router()
 
 // Zod schemas
-const TestPhase = z.enum(['practice', 'skill', 'benchmark', 'strategy', 'final'])
+const TestPhase = z.enum(['practice', 'skill', 'benchmark', 'final'])
 
 // REGISTER a new participant
 router.post('/api/v1/register', async (req, res) => {
@@ -43,47 +43,46 @@ router.post('/api/v1/register', async (req, res) => {
 // CHECK if participant exists and completion status
 router.get('/api/v1/check-participant/:prolificPid', async (req, res) => {
   const { prolificPid } = req.params
-  
+
   if (!prolificPid) {
     return res.status(400).json({ error: 'Missing prolificPid parameter' })
   }
 
   try {
-    const participant = await prisma.participant.findFirst({ 
+    const participant = await prisma.participant.findFirst({
       where: { prolificPid }
     })
-    
+
     if (!participant) {
-      return res.status(200).json({ 
-        exists: false, 
-        completed: false 
+      return res.status(200).json({
+        exists: false,
+        completed: false
       })
     }
-    
+
     // Check if participant has completed all required phases
-    const requiredPhases = ['practice', 'skill', 'benchmark', 'strategy', 'final'] as const
+    const requiredPhases = ['practice', 'skill', 'benchmark', 'final'] as const
     const tests: any = {
       practice: participant.testPractice,
       skill: participant.testSkill,
       benchmark: participant.testBenchmark,
-      strategy: participant.testStrategy,
       final: participant.testFinal
     }
-    
-    const completedPhases = requiredPhases.filter(phase => 
+
+    const completedPhases = requiredPhases.filter(phase =>
       tests[phase]?.completed === true
     )
-    
+
     const isFullyCompleted = completedPhases.length === requiredPhases.length
-    
+
     // Also check for explicit completion flag
     const isMarkedCompleted = !!participant.completedAt
-    
+
     // Participant is considered completed if they've finished all phases OR been explicitly marked
     const isCompleted = isFullyCompleted || isMarkedCompleted
-    
-    return res.status(200).json({ 
-      exists: true, 
+
+    return res.status(200).json({
+      exists: true,
       completed: isCompleted,
       participantId: participant.participantId,
       completedPhases: completedPhases.length,
@@ -91,7 +90,7 @@ router.get('/api/v1/check-participant/:prolificPid', async (req, res) => {
       allPhasesComplete: isFullyCompleted,
       markedComplete: isMarkedCompleted
     })
-    
+
   } catch (err) {
     console.error('[CHECK PARTICIPANT ERROR]', err)
     return res.status(500).json({ error: 'Failed to check participant' })
@@ -101,41 +100,38 @@ router.get('/api/v1/check-participant/:prolificPid', async (req, res) => {
 // MARK participant as completed
 router.post('/api/v1/complete-participant', async (req, res) => {
   const { participantId, prolificPid, completedAt } = req.body
-  
-  if (!participantId) {
-    return res.status(400).json({ 
-      error: 'Missing required field: participantId' 
+
+  if (!participantId || !prolificPid) {
+    return res.status(400).json({
+      error: 'Missing required fields: participantId, prolificPid'
     })
   }
 
   try {
-    // Build where clause - use prolificPid if provided, otherwise just use participantId
-    const whereClause: any = { participantId }
-    if (prolificPid) {
-      whereClause.prolificPid = prolificPid
-    }
-
     const updated = await prisma.participant.updateMany({
-      where: whereClause,
-      data: { 
+      where: {
+        participantId,
+        prolificPid
+      },
+      data: {
         completedAt: completedAt ? new Date(completedAt) : new Date()
       }
     })
-    
+
     if (updated.count === 0) {
       return res.status(404).json({ error: 'Participant not found' })
     }
-    
+
     const participant = await prisma.participant.findFirst({
-      where: { participantId }
+      where: { participantId, prolificPid }
     })
-    
-    console.log(`[Backend] Marked participant as completed: ${participantId}${prolificPid ? ` (prolificPid: ${prolificPid})` : ''}`)
-    return res.status(200).json({ 
-      success: true, 
-      completedAt: participant?.completedAt 
+
+    console.log(`[Backend] Marked participant as completed: ${prolificPid}`)
+    return res.status(200).json({
+      success: true,
+      completedAt: participant?.completedAt
     })
-    
+
   } catch (err) {
     console.error('[COMPLETE PARTICIPANT ERROR]', err)
     return res.status(500).json({ error: 'Failed to mark participant as completed' })
@@ -145,20 +141,20 @@ router.post('/api/v1/complete-participant', async (req, res) => {
 // REGISTER a Prolific participant
 router.post('/api/v1/register-prolific', async (req, res) => {
   const { prolificPid, studyId, sessionId } = req.body
-  
+
   // Validate required parameters
   if (!prolificPid || !studyId || !sessionId) {
-    return res.status(400).json({ 
-      error: 'Missing required Prolific parameters: prolificPid, studyId, sessionId' 
+    return res.status(400).json({
+      error: 'Missing required Prolific parameters: prolificPid, studyId, sessionId'
     })
   }
 
   // Validate Prolific ID format (should be a valid UUID-like string)
   const prolificIdPattern = /^[a-zA-Z0-9]{8,}$/
-  
+
   if (!prolificIdPattern.test(prolificPid)) {
-    return res.status(400).json({ 
-      error: 'Invalid Prolific participant ID format' 
+    return res.status(400).json({
+      error: 'Invalid Prolific participant ID format'
     })
   }
 
@@ -192,11 +188,11 @@ router.post('/api/v1/register-prolific', async (req, res) => {
   // Create new participant with Prolific data
   try {
     const id = crypto.randomUUID()
-    
+
     // TEST MODE: Append timestamp to prolificPid to allow duplicates
     const uniqueProlificPid = `${prolificPid}_${Date.now()}`
     console.log(`[Backend] TEST MODE: Using unique prolificPid: ${uniqueProlificPid}`)
-    
+
     const newDoc = await prisma.participant.create({
       data: {
         participantId: id,
@@ -209,7 +205,7 @@ router.post('/api/v1/register-prolific', async (req, res) => {
     })
 
     console.log(`[Backend] Created new participant for Prolific ID: ${prolificPid}, Participant ID: ${id}`)
-    return res.status(201).json({ 
+    return res.status(201).json({
       participantId: newDoc.participantId,
       message: 'New participant created',
       isExisting: false
@@ -218,22 +214,22 @@ router.post('/api/v1/register-prolific', async (req, res) => {
     // Handle duplicate key error (race condition)
     if (createError.code === 'P2002') { // Prisma unique constraint violation
       console.log(`[Backend] Race condition detected for Prolific ID: ${prolificPid}. Checking for existing participant...`)
-      
+
       // Try to find the participant that was just created
-      const raceConditionParticipant = await prisma.participant.findFirst({ 
+      const raceConditionParticipant = await prisma.participant.findFirst({
         where: { prolificPid }
       })
-      
+
       if (raceConditionParticipant) {
         console.log(`[Backend] Found existing participant from race condition: ${raceConditionParticipant.participantId}`)
-        return res.status(200).json({ 
+        return res.status(200).json({
           participantId: raceConditionParticipant.participantId,
           message: 'Returning existing participant (race condition handled)',
           isExisting: true
         })
       }
     }
-    
+
     // Re-throw if it's not a duplicate key error
     console.error(`[Backend] Error creating participant for Prolific ID: ${prolificPid}`, createError)
     throw createError
@@ -250,15 +246,6 @@ router.post('/api/v1/ingest-phase', async (req, res) => {
   }
 
   try {
-    // First verify participant exists
-    const participant = await prisma.participant.findFirst({ 
-      where: { participantId }
-    })
-    if (!participant) {
-      console.error(`[INGEST ERROR] Participant not found: ${participantId}`)
-      return res.status(404).json({ error: "Participant not found" })
-    }
-
     console.log(`[INGEST] Storing data for participant ${participantId}, phase: ${phase}`)
 
     // Map phase to the correct field
@@ -266,7 +253,6 @@ router.post('/api/v1/ingest-phase', async (req, res) => {
       practice: 'testPractice',
       skill: 'testSkill',
       benchmark: 'testBenchmark',
-      strategy: 'testStrategy',
       final: 'testFinal'
     }
 
@@ -287,23 +273,28 @@ router.post('/api/v1/ingest-phase', async (req, res) => {
       totalPoints: data.totalPoints,
       maxPoints: data.maxPoints,
       incorrectAnswers: data.incorrectAnswers,
-      unansweredQuestions: data.unansweredQuestions
+      unansweredQuestions: data.unansweredQuestions,
+      // Click-level history (ball toggles + answer confirmations + navigation),
+      // shipped in a single payload at phase end to avoid per-click HTTP overhead.
+      interactions: Array.isArray(data.interactions) ? data.interactions : []
     }
 
     const updated = await prisma.participant.update({
       where: { participantId },
-      data: updateData
+      data: updateData,
+      select: { participantId: true } // Only select ID to prevent pulling huge JSON columns into memory
     })
-    
-    if (!updated) {
-      console.error(`[INGEST ERROR] Failed to update participant: ${participantId}`)
+
+    console.log(`[INGEST SUCCESS] Data stored for participant ${participantId}, phase: ${phase}`)
+    return res.status(200).json({ success: true })
+
+  } catch (err: any) {
+    // Handle Prisma "Record to update not found" error efficiently
+    if (err.code === 'P2025') {
+      console.error(`[INGEST ERROR] Participant not found for update: ${participantId}`)
       return res.status(404).json({ error: "Participant not found" })
     }
-    
-    console.log(`[INGEST SUCCESS] Data stored for participant ${participantId}, phase: ${phase}`)
-    return res.status(200).json({ success: true, updated })
-    
-  } catch (err) {
+
     console.error('[INGEST ERROR]', err)
     return res.status(500).json({ error: 'Failed to ingest phase data' })
   }
@@ -312,12 +303,12 @@ router.post('/api/v1/ingest-phase', async (req, res) => {
 // EXPORT Prolific data for researchers
 router.get('/api/v1/export-prolific-data', async (req, res) => {
   try {
-    const participants = await prisma.participant.findMany({ 
-      where: { 
-        prolificPid: { not: null } 
-      } 
+    const participants = await prisma.participant.findMany({
+      where: {
+        prolificPid: { not: null }
+      }
     })
-    
+
     const exportData = participants.map((p: Participant) => ({
       participantId: p.participantId,
       prolificPid: p.prolificPid,
@@ -330,15 +321,14 @@ router.get('/api/v1/export-prolific-data', async (req, res) => {
         practice: p.testPractice,
         skill: p.testSkill,
         benchmark: p.testBenchmark,
-        strategy: p.testStrategy,
         final: p.testFinal
       }
     }))
-    
+
     res.setHeader('Content-Type', 'application/json')
     res.setHeader('Content-Disposition', 'attachment; filename=prolific-study-data.json')
     res.status(200).json(exportData)
-    
+
   } catch (err) {
     console.error('[EXPORT ERROR]', err)
     return res.status(500).json({ error: 'Failed to export data' })
@@ -348,16 +338,16 @@ router.get('/api/v1/export-prolific-data', async (req, res) => {
 // LOG time tracking data
 router.post('/api/v1/log-time', async (req, res) => {
   const { participantId, sectionName, questionId, timeData, interactionType } = req.body
-  
+
   if (!participantId || !timeData) {
     return res.status(400).json({ error: 'Missing required fields: participantId, timeData' })
   }
 
   try {
-    const participant = await prisma.participant.findFirst({ 
+    const participant = await prisma.participant.findFirst({
       where: { participantId }
     })
-    
+
     if (!participant) {
       return res.status(404).json({ error: 'Participant not found' })
     }
@@ -374,7 +364,7 @@ router.post('/api/v1/log-time', async (req, res) => {
     if (sectionName && !questionId) {
       // Section-level time tracking
       const existingSection = timeTracking.sections.find((s: any) => s.sectionName === sectionName)
-      
+
       if (existingSection) {
         if (timeData.endTime) {
           existingSection.endTime = timeData.endTime
@@ -392,7 +382,7 @@ router.post('/api/v1/log-time', async (req, res) => {
     } else if (sectionName && questionId) {
       // Question-level time tracking
       let section = timeTracking.sections.find((s: any) => s.sectionName === sectionName)
-      
+
       if (!section) {
         const newSection = {
           sectionName,
@@ -406,13 +396,13 @@ router.post('/api/v1/log-time', async (req, res) => {
       }
 
       const existingQuestion = section.questionTimes.find((q: any) => q.questionId === questionId)
-      
+
       if (existingQuestion) {
         if (timeData.endTime) {
           existingQuestion.endTime = timeData.endTime
           existingQuestion.timeSpent = new Date(timeData.endTime).getTime() - new Date(existingQuestion.startTime).getTime()
         }
-        
+
         // Add interaction if provided
         if (interactionType) {
           if (!existingQuestion.interactions) {
@@ -448,12 +438,12 @@ router.post('/api/v1/log-time', async (req, res) => {
       where: { participantId },
       data: { timeTracking }
     })
-    
-    return res.status(200).json({ 
-      success: true, 
-      message: 'Time data logged successfully' 
+
+    return res.status(200).json({
+      success: true,
+      message: 'Time data logged successfully'
     })
-    
+
   } catch (err) {
     console.error('[LOG TIME ERROR]', err)
     return res.status(500).json({ error: 'Failed to log time data' })
@@ -463,12 +453,12 @@ router.post('/api/v1/log-time', async (req, res) => {
 // GET time analytics for a participant
 router.get('/api/v1/participant-analytics/:participantId', async (req, res) => {
   const { participantId } = req.params
-  
+
   try {
-    const participant = await prisma.participant.findFirst({ 
+    const participant = await prisma.participant.findFirst({
       where: { participantId }
     })
-    
+
     if (!participant) {
       return res.status(404).json({ error: 'Participant not found' })
     }
@@ -480,14 +470,14 @@ router.get('/api/v1/participant-analytics/:participantId', async (req, res) => {
       participantId,
       prolificPid: participant.prolificPid,
       totalStudyTime: timeTracking.totalStudyTime || 0,
-      sessionDuration: timeTracking.sessionStart && timeTracking.sessionEnd 
+      sessionDuration: timeTracking.sessionStart && timeTracking.sessionEnd
         ? new Date(timeTracking.sessionEnd).getTime() - new Date(timeTracking.sessionStart).getTime()
         : null,
       sections: (timeTracking.sections || []).map((section: any) => ({
         sectionName: section.sectionName,
         timeSpent: section.timeSpent,
         questionCount: section.questionTimes?.length || 0,
-        avgTimePerQuestion: section.questionTimes?.length > 0 
+        avgTimePerQuestion: section.questionTimes?.length > 0
           ? section.questionTimes.reduce((sum: number, q: any) => sum + (q.timeSpent || 0), 0) / section.questionTimes.length
           : 0,
         questions: (section.questionTimes || []).map((q: any) => ({
@@ -501,13 +491,12 @@ router.get('/api/v1/participant-analytics/:participantId', async (req, res) => {
         practice: participant.testPractice,
         skill: participant.testSkill,
         benchmark: participant.testBenchmark,
-        strategy: participant.testStrategy,
         final: participant.testFinal
       }
     }
-    
+
     return res.status(200).json(analytics)
-    
+
   } catch (err) {
     console.error('[PARTICIPANT ANALYTICS ERROR]', err)
     return res.status(500).json({ error: 'Failed to get participant analytics' })
@@ -517,19 +506,19 @@ router.get('/api/v1/participant-analytics/:participantId', async (req, res) => {
 // GET study statistics
 router.get('/api/v1/study-stats', async (req, res) => {
   try {
-    const totalParticipants = await prisma.participant.count({ 
-      where: { 
-        prolificPid: { not: null } 
-      } 
+    const totalParticipants = await prisma.participant.count({
+      where: {
+        prolificPid: { not: null }
+      }
     })
-    
-    const completedParticipants = await prisma.participant.count({ 
-      where: { 
+
+    const completedParticipants = await prisma.participant.count({
+      where: {
         prolificPid: { not: null },
         completedAt: { not: null }
-      } 
+      }
     })
-    
+
     // Get all participants for phase stats
     const participants = await prisma.participant.findMany({
       where: { prolificPid: { not: null } },
@@ -537,21 +526,19 @@ router.get('/api/v1/study-stats', async (req, res) => {
         testPractice: true,
         testSkill: true,
         testBenchmark: true,
-        testStrategy: true,
         testFinal: true
       }
     })
 
-    let practiceCount = 0, skillCount = 0, benchmarkCount = 0, strategyCount = 0, finalCount = 0
+    let practiceCount = 0, skillCount = 0, benchmarkCount = 0, finalCount = 0
 
     participants.forEach((p: any) => {
       if ((p.testPractice as any)?.completed) practiceCount++
       if ((p.testSkill as any)?.completed) skillCount++
       if ((p.testBenchmark as any)?.completed) benchmarkCount++
-      if ((p.testStrategy as any)?.completed) strategyCount++
       if ((p.testFinal as any)?.completed) finalCount++
     })
-    
+
     res.status(200).json({
       totalParticipants,
       completedParticipants,
@@ -559,12 +546,11 @@ router.get('/api/v1/study-stats', async (req, res) => {
         practice: practiceCount,
         skill: skillCount,
         benchmark: benchmarkCount,
-        strategy: strategyCount,
         final: finalCount
       },
       completionRate: totalParticipants > 0 ? (completedParticipants / totalParticipants * 100).toFixed(1) : 0
     })
-    
+
   } catch (err) {
     console.error('[STATS ERROR]', err)
     return res.status(500).json({ error: 'Failed to get stats' })
@@ -575,38 +561,125 @@ router.get('/api/v1/study-stats', async (req, res) => {
 const adminAuth = (req: any, res: any, next: any) => {
   const adminKey = req.headers['x-admin-key'] || req.query.adminKey
   const validAdminKey = process.env.ADMIN_KEY || 'knapsack-admin-2024-secure'
-  
+
   if (!adminKey || adminKey !== validAdminKey) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       error: 'Unauthorized. Admin access required.',
       hint: 'Provide valid admin key in x-admin-key header or adminKey query parameter'
     })
   }
-  
+
   next()
 }
+
+// ADMIN EXPORT CSV - Protected Route
+router.get('/api/v1/admin/export-csv', adminAuth, async (req, res) => {
+  try {
+    const participants = await prisma.participant.findMany({
+      where: {},
+      orderBy: {
+        createdAt: 'desc'
+      }
+    })
+
+    // Define CSV Headers
+    const headers = [
+      'Participant ID',
+      'Prolific PID',
+      'Study ID',
+      'Session ID',
+      'Registered At',
+      'Completed At',
+      'Total Study Time (min)',
+      // Practice
+      'Practice Completed',
+      'Practice Accuracy',
+      'Practice Score',
+      // Skill
+      'Skill Completed',
+      'Skill Accuracy',
+      'Skill Score',
+      // Benchmark
+      'Benchmark Completed',
+      'Benchmark Accuracy',
+      'Benchmark Score',
+      // Final
+      'Final Completed',
+      'Final Accuracy',
+      'Final Score'
+    ].join(',')
+
+    // Transform data to CSV rows
+    const rows = participants.map((p: any) => {
+      const timeTracking = p.timeTracking || {}
+      const practice = p.testPractice || {}
+      const skill = p.testSkill || {}
+      const benchmark = p.testBenchmark || {}
+      const final = p.testFinal || {}
+
+      const formatDate = (d: Date | null) => d ? new Date(d).toISOString() : ''
+      const safeNum = (n: any) => n !== undefined && n !== null ? n : 0
+      const safeBool = (b: any) => b ? 'Yes' : 'No'
+
+      return [
+        p.participantId,
+        p.prolificPid,
+        p.studyId,
+        p.sessionId,
+        formatDate(p.registeredAt),
+        formatDate(p.completedAt),
+        safeNum(timeTracking.totalStudyTime) / 60000, // Convert ms to min
+        // Practice
+        safeBool(practice.completed),
+        safeNum(practice.accuracy),
+        safeNum(practice.totalPoints),
+        // Skill
+        safeBool(skill.completed),
+        safeNum(skill.accuracy),
+        safeNum(skill.totalPoints),
+        // Benchmark
+        safeBool(benchmark.completed),
+        safeNum(benchmark.accuracy),
+        safeNum(benchmark.totalPoints),
+        // Final
+        safeBool(final.completed),
+        safeNum(final.accuracy),
+        safeNum(final.totalPoints)
+      ].map(val => `"${val}"`).join(',') // Quote all values to handle commas safely
+    })
+
+    const csvContent = [headers, ...rows].join('\n')
+
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', `attachment; filename=knapsack_activities_${new Date().toISOString().split('T')[0]}.csv`)
+    return res.status(200).send(csvContent)
+
+  } catch (err) {
+    console.error('[ADMIN EXPORT CSV ERROR]', err)
+    return res.status(500).json({ error: 'Failed to export CSV' })
+  }
+})
 
 // ADMIN ANALYTICS DASHBOARD - Protected Route
 router.get('/api/v1/admin/analytics', adminAuth, async (req, res) => {
   try {
-    const participants = await prisma.participant.findMany({ 
-      where: { 
-        prolificPid: { not: null } 
-      } 
+    const participants = await prisma.participant.findMany({
+      orderBy: {
+        createdAt: 'desc'
+      }
     })
-    
+
     // Calculate comprehensive analytics
-    const requiredPhases = ['practice', 'skill', 'benchmark', 'strategy', 'final']
-    
+    const requiredPhases = ['practice', 'skill', 'benchmark', 'final']
+
     const completedParticipants = participants.filter((p: Participant) => {
       const tests: any = {
         practice: p.testPractice,
         skill: p.testSkill,
         benchmark: p.testBenchmark,
-        strategy: p.testStrategy,
         final: p.testFinal
       }
-      const completedPhases = requiredPhases.filter(phase => 
+      const completedPhases = requiredPhases.filter(phase =>
         tests[phase]?.completed === true
       )
       return completedPhases.length === requiredPhases.length
@@ -630,6 +703,7 @@ router.get('/api/v1/admin/analytics', adminAuth, async (req, res) => {
         return {
           participantId: p.participantId,
           prolificPid: p.prolificPid,
+          email: p.email,
           registeredAt: p.registeredAt,
           completedAt: p.completedAt,
           totalStudyTime: timeTracking.totalStudyTime || 0,
@@ -653,14 +727,6 @@ router.get('/api/v1/admin/analytics', adminAuth, async (req, res) => {
               correctAnswers: (p.testBenchmark as any).correctAnswers,
               totalQuestions: (p.testBenchmark as any).totalQuestions
             } : null,
-            strategy: p.testStrategy ? {
-              completed: (p.testStrategy as any).completed,
-              answers: (p.testStrategy as any).answers,
-              questionsAnswered: (p.testStrategy as any).questionsAnswered,
-              totalQuestions: (p.testStrategy as any).totalQuestions,
-              timeUsed: (p.testStrategy as any).timeUsed,
-              questionTimes: (p.testStrategy as any).questionTimes
-            } : null,
             final: p.testFinal ? {
               completed: (p.testFinal as any).completed,
               accuracy: (p.testFinal as any).accuracy,
@@ -674,44 +740,44 @@ router.get('/api/v1/admin/analytics', adminAuth, async (req, res) => {
               sectionName: section.sectionName,
               timeSpent: section.timeSpent || 0,
               questionCount: section.questionTimes?.length || 0,
-              avgTimePerQuestion: section.questionTimes?.length > 0 
+              avgTimePerQuestion: section.questionTimes?.length > 0
                 ? section.questionTimes.reduce((sum: number, q: any) => sum + (q.timeSpent || 0), 0) / section.questionTimes.length
                 : 0
             }))
         }
       })
     }
-    
+
     // Calculate aggregate time analytics
     const validTimeData = participants.filter((p: Participant) => (p.timeTracking as any)?.totalStudyTime)
     if (validTimeData.length > 0) {
       analytics.overview.totalStudyTime = validTimeData.reduce((sum: number, p: Participant) => sum + ((p.timeTracking as any)?.totalStudyTime || 0), 0)
       analytics.overview.avgStudyTime = analytics.overview.totalStudyTime / validTimeData.length
     }
-    
+
     // Section time analytics
     const sectionTimes: { [key: string]: number[] } = {}
     participants.forEach((p: any) => {
       const timeTracking: any = p.timeTracking || {}
-      ;(timeTracking.sections || []).forEach((section: any) => {
-        if (!sectionTimes[section.sectionName]) {
-          sectionTimes[section.sectionName] = []
-        }
-        if (section.timeSpent) {
-          sectionTimes[section.sectionName].push(section.timeSpent)
-        }
-      })
+        ; (timeTracking.sections || []).forEach((section: any) => {
+          if (!sectionTimes[section.sectionName]) {
+            sectionTimes[section.sectionName] = []
+          }
+          if (section.timeSpent) {
+            sectionTimes[section.sectionName].push(section.timeSpent)
+          }
+        })
     })
-    
+
     Object.keys(sectionTimes).forEach(sectionName => {
       const times = sectionTimes[sectionName]
-      ;(analytics.timeAnalytics.avgTimePerSection as any)[sectionName] = times.length > 0 
-        ? times.reduce((sum, time) => sum + time, 0) / times.length 
-        : 0
+        ; (analytics.timeAnalytics.avgTimePerSection as any)[sectionName] = times.length > 0
+          ? times.reduce((sum, time) => sum + time, 0) / times.length
+          : 0
     })
-    
+
     return res.status(200).json(analytics)
-    
+
   } catch (err) {
     console.error('[ADMIN ANALYTICS ERROR]', err)
     return res.status(500).json({ error: 'Failed to get admin analytics' })
@@ -721,12 +787,12 @@ router.get('/api/v1/admin/analytics', adminAuth, async (req, res) => {
 // ADMIN PARTICIPANT DETAIL - Protected Route
 router.get('/api/v1/admin/participant/:participantId', adminAuth, async (req, res) => {
   const { participantId } = req.params
-  
+
   try {
-    const participant = await prisma.participant.findFirst({ 
+    const participant = await prisma.participant.findFirst({
       where: { participantId }
     })
-    
+
     if (!participant) {
       return res.status(404).json({ error: 'Participant not found' })
     }
@@ -748,12 +814,11 @@ router.get('/api/v1/admin/participant/:participantId', adminAuth, async (req, re
         practice: participant.testPractice,
         skill: participant.testSkill,
         benchmark: participant.testBenchmark,
-        strategy: participant.testStrategy,
         final: participant.testFinal
       },
       detailedTimeAnalysis: {
         totalTimeSpent: timeTracking.totalStudyTime || 0,
-        sessionDuration: timeTracking.sessionStart && timeTracking.sessionEnd 
+        sessionDuration: timeTracking.sessionStart && timeTracking.sessionEnd
           ? new Date(timeTracking.sessionEnd).getTime() - new Date(timeTracking.sessionStart).getTime()
           : null,
         sectionBreakdown: (timeTracking.sections || []).map((section: any) => ({
@@ -776,9 +841,9 @@ router.get('/api/v1/admin/participant/:participantId', adminAuth, async (req, re
         }))
       }
     }
-    
+
     return res.status(200).json(detailedAnalytics)
-    
+
   } catch (err) {
     console.error('[ADMIN PARTICIPANT DETAIL ERROR]', err)
     return res.status(500).json({ error: 'Failed to get participant details' })

@@ -119,33 +119,42 @@ exports.router.post('/api/v1/register-prolific', async (req, res) => {
             error: 'Invalid Prolific participant ID format'
         });
     }
-    // Check if this Prolific participant already exists
-    const existingParticipant = await db_1.prisma.participant.findFirst({
-        where: { prolificPid }
-    });
+    // TEMPORARILY DISABLED FOR TESTING: Check if this Prolific participant already exists
+    // TODO: Re-enable this before production launch
+    /*
+    const existingParticipant = await prisma.participant.findFirst({
+      where: { prolificPid }
+    })
+    
     if (existingParticipant) {
-        // Check if participant has already completed the study
-        if (existingParticipant.completedAt) {
-            console.log(`[Backend] Participant already completed study: ${prolificPid}`);
-            return res.status(403).json({
-                error: 'Participant has already completed the study',
-                completed: true
-            });
-        }
-        console.log(`[Backend] Returning existing participant for Prolific ID: ${prolificPid}`);
-        return res.status(200).json({
-            participantId: existingParticipant.participantId,
-            message: 'Returning existing participant',
-            isExisting: true
-        });
+      // Check if participant has already completed the study
+      if (existingParticipant.completedAt) {
+        console.log(`[Backend] Participant already completed study: ${prolificPid}`)
+        return res.status(403).json({
+          error: 'Participant has already completed the study',
+          completed: true
+        })
+      }
+      
+      console.log(`[Backend] Returning existing participant for Prolific ID: ${prolificPid}`)
+      return res.status(200).json({
+        participantId: existingParticipant.participantId,
+        message: 'Returning existing participant',
+        isExisting: true
+      })
     }
+    */
+    console.log(`[Backend] TEST MODE: Allowing new participant creation (duplicate check disabled)`);
     // Create new participant with Prolific data
     try {
         const id = crypto_1.default.randomUUID();
+        // TEST MODE: Append timestamp to prolificPid to allow duplicates
+        const uniqueProlificPid = `${prolificPid}_${Date.now()}`;
+        console.log(`[Backend] TEST MODE: Using unique prolificPid: ${uniqueProlificPid}`);
         const newDoc = await db_1.prisma.participant.create({
             data: {
                 participantId: id,
-                prolificPid,
+                prolificPid: uniqueProlificPid,
                 studyId,
                 sessionId,
                 registeredAt: new Date(),
@@ -189,14 +198,6 @@ exports.router.post('/api/v1/ingest-phase', async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields' });
     }
     try {
-        // First verify participant exists
-        const participant = await db_1.prisma.participant.findFirst({
-            where: { participantId }
-        });
-        if (!participant) {
-            console.error(`[INGEST ERROR] Participant not found: ${participantId}`);
-            return res.status(404).json({ error: "Participant not found" });
-        }
         console.log(`[INGEST] Storing data for participant ${participantId}, phase: ${phase}`);
         // Map phase to the correct field
         const phaseFieldMap = {
@@ -226,16 +227,18 @@ exports.router.post('/api/v1/ingest-phase', async (req, res) => {
         };
         const updated = await db_1.prisma.participant.update({
             where: { participantId },
-            data: updateData
+            data: updateData,
+            select: { participantId: true } // Only select ID to prevent pulling huge JSON columns into memory
         });
-        if (!updated) {
-            console.error(`[INGEST ERROR] Failed to update participant: ${participantId}`);
-            return res.status(404).json({ error: "Participant not found" });
-        }
         console.log(`[INGEST SUCCESS] Data stored for participant ${participantId}, phase: ${phase}`);
-        return res.status(200).json({ success: true, updated });
+        return res.status(200).json({ success: true });
     }
     catch (err) {
+        // Handle Prisma "Record to update not found" error efficiently
+        if (err.code === 'P2025') {
+            console.error(`[INGEST ERROR] Participant not found for update: ${participantId}`);
+            return res.status(404).json({ error: "Participant not found" });
+        }
         console.error('[INGEST ERROR]', err);
         return res.status(500).json({ error: 'Failed to ingest phase data' });
     }
@@ -493,12 +496,102 @@ const adminAuth = (req, res, next) => {
     }
     next();
 };
+// ADMIN EXPORT CSV - Protected Route
+exports.router.get('/api/v1/admin/export-csv', adminAuth, async (req, res) => {
+    try {
+        const participants = await db_1.prisma.participant.findMany({
+            where: {},
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+        // Define CSV Headers
+        const headers = [
+            'Participant ID',
+            'Prolific PID',
+            'Study ID',
+            'Session ID',
+            'Registered At',
+            'Completed At',
+            'Total Study Time (min)',
+            // Practice
+            'Practice Completed',
+            'Practice Accuracy',
+            'Practice Score',
+            // Skill
+            'Skill Completed',
+            'Skill Accuracy',
+            'Skill Score',
+            // Benchmark
+            'Benchmark Completed',
+            'Benchmark Accuracy',
+            'Benchmark Score',
+            // Strategy
+            'Strategy Completed',
+            'Strategy Questions Answered',
+            'Strategy Time Used',
+            // Final
+            'Final Completed',
+            'Final Accuracy',
+            'Final Score'
+        ].join(',');
+        // Transform data to CSV rows
+        const rows = participants.map((p) => {
+            const timeTracking = p.timeTracking || {};
+            const practice = p.testPractice || {};
+            const skill = p.testSkill || {};
+            const benchmark = p.testBenchmark || {};
+            const strategy = p.testStrategy || {};
+            const final = p.testFinal || {};
+            const formatDate = (d) => d ? new Date(d).toISOString() : '';
+            const safeNum = (n) => n !== undefined && n !== null ? n : 0;
+            const safeBool = (b) => b ? 'Yes' : 'No';
+            return [
+                p.participantId,
+                p.prolificPid,
+                p.studyId,
+                p.sessionId,
+                formatDate(p.registeredAt),
+                formatDate(p.completedAt),
+                safeNum(timeTracking.totalStudyTime) / 60000, // Convert ms to min
+                // Practice
+                safeBool(practice.completed),
+                safeNum(practice.accuracy),
+                safeNum(practice.totalPoints),
+                // Skill
+                safeBool(skill.completed),
+                safeNum(skill.accuracy),
+                safeNum(skill.totalPoints),
+                // Benchmark
+                safeBool(benchmark.completed),
+                safeNum(benchmark.accuracy),
+                safeNum(benchmark.totalPoints),
+                // Strategy
+                safeBool(strategy.completed),
+                safeNum(strategy.questionsAnswered),
+                safeNum(strategy.timeUsed) / 1000, // Seconds
+                // Final
+                safeBool(final.completed),
+                safeNum(final.accuracy),
+                safeNum(final.totalPoints)
+            ].map(val => `"${val}"`).join(','); // Quote all values to handle commas safely
+        });
+        const csvContent = [headers, ...rows].join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=knapsack_activities_${new Date().toISOString().split('T')[0]}.csv`);
+        return res.status(200).send(csvContent);
+    }
+    catch (err) {
+        console.error('[ADMIN EXPORT CSV ERROR]', err);
+        return res.status(500).json({ error: 'Failed to export CSV' });
+    }
+});
 // ADMIN ANALYTICS DASHBOARD - Protected Route
 exports.router.get('/api/v1/admin/analytics', adminAuth, async (req, res) => {
     try {
         const participants = await db_1.prisma.participant.findMany({
-            where: {
-                prolificPid: { not: null }
+            orderBy: {
+                createdAt: 'desc'
             }
         });
         // Calculate comprehensive analytics
@@ -532,6 +625,7 @@ exports.router.get('/api/v1/admin/analytics', adminAuth, async (req, res) => {
                 return {
                     participantId: p.participantId,
                     prolificPid: p.prolificPid,
+                    email: p.email,
                     registeredAt: p.registeredAt,
                     completedAt: p.completedAt,
                     totalStudyTime: timeTracking.totalStudyTime || 0,

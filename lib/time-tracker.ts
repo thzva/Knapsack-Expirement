@@ -1,16 +1,29 @@
 // Time tracking utility for questions and sections
+type InteractionRecord = {
+  type: string
+  timestamp: Date
+  sectionName: string | null
+  questionId: number | null
+  data?: any
+}
+
 export class TimeTracker {
   private startTime: Date | null = null
   private endTime: Date | null = null
   private participantId: string | null = null
   private sectionName: string | null = null
   private questionId: number | null = null
-  private interactions: Array<{type: string, timestamp: Date, data?: any}> = []
+  private interactions: Array<{ type: string, timestamp: Date, data?: any }> = []
+  // Session-wide buffer — survives startQuestion/reset so phase-end handlers can
+  // ship the full click history with the ingest-phase payload (no per-click HTTP calls).
+  private allInteractions: InteractionRecord[] = []
 
   constructor(participantId?: string) {
-    // Only access localStorage on client side
+    // Prefer sessionStorage (used by Prolific/auth flow), then localStorage
     if (typeof window !== 'undefined') {
-      this.participantId = participantId || localStorage.getItem('participantId')
+      this.participantId = participantId
+        || sessionStorage.getItem('participantId')
+        || localStorage.getItem('participantId')
     } else {
       this.participantId = participantId || null
     }
@@ -23,9 +36,9 @@ export class TimeTracker {
     this.startTime = new Date()
     this.endTime = null
     this.interactions = []
-    
+
     console.log(`[TimeTracker] Started section: ${sectionName}`)
-    
+
     // Log section start to backend
     this.logTimeData({
       sectionName,
@@ -42,7 +55,7 @@ export class TimeTracker {
     this.startTime = new Date()
     this.endTime = null
     this.interactions = []
-    
+
     console.log(`[TimeTracker] Started question ${questionId} in section ${this.sectionName}`)
   }
 
@@ -55,9 +68,9 @@ export class TimeTracker {
 
     this.endTime = new Date()
     const timeSpent = this.endTime.getTime() - this.startTime.getTime()
-    
+
     console.log(`[TimeTracker] Question ${this.questionId} completed in ${timeSpent}ms`)
-    
+
     // Log question time to backend
     this.logTimeData({
       sectionName: this.sectionName,
@@ -79,9 +92,9 @@ export class TimeTracker {
 
     this.endTime = new Date()
     const timeSpent = this.endTime.getTime() - this.startTime.getTime()
-    
+
     console.log(`[TimeTracker] Section ${this.sectionName} completed in ${timeSpent}ms`)
-    
+
     // Log section completion to backend
     this.logTimeData({
       sectionName: this.sectionName,
@@ -94,14 +107,18 @@ export class TimeTracker {
 
   // Log interaction (answer change, focus, blur, etc.)
   logInteraction(type: string, data?: any) {
-    const interaction = {
-      type,
-      timestamp: new Date(),
-      data
-    }
-    
+    const ts = new Date()
+    const interaction = { type, timestamp: ts, data }
+
     this.interactions.push(interaction)
-    
+    this.allInteractions.push({
+      type,
+      timestamp: ts,
+      sectionName: this.sectionName,
+      questionId: this.questionId,
+      data
+    })
+
     // If we're tracking a question, log the interaction
     if (this.questionId && this.sectionName) {
       this.logTimeData({
@@ -116,48 +133,36 @@ export class TimeTracker {
   }
 
   // Private method to send time data to backend
-  private async logTimeData(payload: {
+  // NOTE: We intentionally do NOT fire a network request per interaction.
+  // That would fire hundreds of requests per session (one per ball toggle),
+  // causing CORS errors and server overload on Render's free tier.
+  // Time tracking data is bundled into the ingest-phase payload at phase completion instead.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private logTimeData(_payload: {
     sectionName?: string
     questionId?: number
     timeData: any
     interactionType?: string
   }) {
-    // Skip if we're on the server side
-    if (typeof window === 'undefined') return
-    
-    if (!this.participantId) {
-      console.warn('[TimeTracker] No participant ID available for logging')
-      return
-    }
+    // intentional no-op
+  }
 
-    try {
-      const API_BASE = process.env.NODE_ENV === 'production' 
-        ? (process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com")
-        : "http://localhost:8787"
+  // Snapshot of all interactions logged this session.
+  // Phase completion handlers should pass this along in the ingest-phase payload.
+  getAllInteractions(): InteractionRecord[] {
+    return this.allInteractions.slice()
+  }
 
-      const response = await fetch(`${API_BASE}/api/v1/log-time`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          participantId: this.participantId,
-          ...payload
-        })
-      })
-
-      if (!response.ok) {
-        console.error('[TimeTracker] Failed to log time data:', response.status)
-      }
-    } catch (error) {
-      console.error('[TimeTracker] Error logging time data:', error)
-    }
+  // Drop interactions for a specific section after they've been shipped to backend,
+  // so re-uploading later phases doesn't ship duplicates.
+  clearInteractionsForSection(sectionName: string) {
+    this.allInteractions = this.allInteractions.filter(i => i.sectionName !== sectionName)
   }
 
   // Get current timing info
   getCurrentTime() {
     if (!this.startTime) return null
-    
+
     const now = new Date()
     return {
       startTime: this.startTime,
@@ -169,7 +174,8 @@ export class TimeTracker {
     }
   }
 
-  // Reset tracker
+  // Reset per-question state. Does NOT clear the session-wide allInteractions
+  // buffer (call clearInteractionsForSection or recreate the tracker for that).
   reset() {
     this.startTime = null
     this.endTime = null

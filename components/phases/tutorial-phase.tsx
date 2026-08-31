@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowRight, Package, Coins, Weight, HelpCircle, Target, DollarSign, CheckCircle, AlertCircle, XCircle } from "lucide-react"
+import { ArrowRight, Package, Coins, Weight, HelpCircle, Target, CheckCircle, AlertCircle, XCircle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import KnapsackQuestion from "@/components/knapsack-question"
 
@@ -17,53 +17,63 @@ interface TutorialPhaseProps {
 const sampleQuestions = [
   {
     id: 1,
-    capacity: 10,
+    capacity: 12,
     balls: [
-      { id: 1, weight: 6, reward: 30, color: "bg-red-500" },
-      { id: 2, weight: 3, reward: 14, color: "bg-blue-500" },
-      { id: 3, weight: 4, reward: 16, color: "bg-green-500" },
-      { id: 4, weight: 2, reward: 9, color: "bg-yellow-500" },
+      { id: 1, weight: 2, reward: 10, color: "bg-red-500" },
+      { id: 2, weight: 3, reward: 12, color: "bg-blue-500" },
+      { id: 3, weight: 3, reward: 11, color: "bg-green-500" },
+      { id: 4, weight: 4, reward: 13, color: "bg-yellow-500" },
+      { id: 5, weight: 7, reward: 6, color: "bg-purple-500" },
+      { id: 6, weight: 9, reward: 4, color: "bg-pink-500" }
     ],
-    solution: [1, 3],
-    explanation: "Select balls 1 and 3 for a total weight of 10 (≤10) and reward of 46 points, using the full capacity.",
+    solution: [1, 2, 3, 4],
+    explanation: "Select balls 1, 2, 3 and 4 for a total weight of 12 (= capacity) and maximum points of 46.",
   },
   {
     id: 2,
-    capacity: 15,
+    capacity: 16,
     balls: [
-      { id: 1, weight: 10, reward: 60, color: "bg-purple-500" },
-      { id: 2, weight: 20, reward: 100, color: "bg-pink-500" },
-      { id: 3, weight: 15, reward: 120, color: "bg-indigo-500" },
+      { id: 1, weight: 2, reward: 9, color: "bg-red-500" },
+      { id: 2, weight: 3, reward: 11, color: "bg-blue-500" },
+      { id: 3, weight: 4, reward: 13, color: "bg-green-500" },
+      { id: 4, weight: 7, reward: 15, color: "bg-yellow-500" },
+      { id: 5, weight: 8, reward: 5, color: "bg-purple-500" },
+      { id: 6, weight: 11, reward: 3, color: "bg-pink-500" }
     ],
-    solution: [3],
-    explanation: "Select ball 3 for maximum reward of 120 points with weight exactly 15.",
+    solution: [1, 2, 3, 4],
+    explanation: "Select balls 1, 2, 3 and 4 for a total weight of 16 (= capacity) and maximum points of 48.",
   },
 ]
 
 // Interactive example questions for tutorial
+// Optimal solutions fill the capacity exactly to reinforce the concept
 const exampleQuestions = [
   {
     id: "tutorial1",
-    capacity: 8,
+    capacity: 14,
     balls: [
-      { id: 1, weight: 5, reward: 20, color: "bg-red-500" },
-      { id: 2, weight: 3, reward: 18, color: "bg-blue-500" },
-      { id: 3, weight: 4, reward: 22, color: "bg-green-500" },
-      { id: 4, weight: 2, reward: 8, color: "bg-yellow-500" },
+      { id: 1, weight: 2, reward: 8, color: "bg-red-500" },
+      { id: 2, weight: 3, reward: 10, color: "bg-blue-500" },
+      { id: 3, weight: 4, reward: 12, color: "bg-green-500" },
+      { id: 4, weight: 5, reward: 14, color: "bg-yellow-500" },
+      { id: 5, weight: 7, reward: 6, color: "bg-purple-500" },
+      { id: 6, weight: 9, reward: 4, color: "bg-pink-500" }
     ],
-    solution: [2, 3], // Optimal solution: balls 2 and 3 for weight=7, reward=40
+    solution: [1, 2, 3, 4], // weight=14 (=capacity), reward=44
     title: "Example 1"
   },
   {
     id: "tutorial2",
-    capacity: 12,
+    capacity: 18,
     balls: [
-      { id: 1, weight: 6, reward: 25, color: "bg-purple-500" },
-      { id: 2, weight: 4, reward: 20, color: "bg-pink-500" },
-      { id: 3, weight: 8, reward: 35, color: "bg-indigo-500" },
-      { id: 4, weight: 3, reward: 12, color: "bg-cyan-500" },
+      { id: 1, weight: 3, reward: 12, color: "bg-red-500" },
+      { id: 2, weight: 4, reward: 14, color: "bg-blue-500" },
+      { id: 3, weight: 5, reward: 16, color: "bg-green-500" },
+      { id: 4, weight: 6, reward: 18, color: "bg-yellow-500" },
+      { id: 5, weight: 8, reward: 7, color: "bg-purple-500" },
+      { id: 6, weight: 10, reward: 5, color: "bg-pink-500" }
     ],
-    solution: [2, 3], // Optimal solution: balls 2 and 3 for weight=12, reward=55
+    solution: [1, 2, 3, 4], // weight=18 (=capacity), reward=60
     title: "Example 2"
   }
 ]
@@ -110,9 +120,9 @@ function DynamicExample() {
     const newSelection = selectedBalls.includes(ballId)
       ? selectedBalls.filter(id => id !== ballId)
       : [...selectedBalls, ballId]
-    
+
     setSelectedBalls(newSelection)
-    
+
     // Calculate feedback
     const newWeight = newSelection.reduce(
       (sum, id) => sum + currentExample.balls.find(b => b.id === id)!.weight,
@@ -132,29 +142,24 @@ function DynamicExample() {
       return
     }
 
-    // Check if this is the optimal solution
-    const isOptimal = newSelection.length === currentExample.solution.length &&
-      currentExample.solution.every(id => newSelection.includes(id))
-    
-    if (isOptimal) {
+    // Calculate optimal reward from known solution
+    const optimalReward = currentExample.solution.reduce(
+      (sum, id) => sum + currentExample.balls.find(b => b.id === id)!.reward,
+      0
+    )
+
+    // Check optimality by comparing REWARD values (not exact IDs)
+    // This correctly handles alternative optimal combinations
+    if (newReward >= optimalReward) {
       setFeedback({
         type: "success",
         message: "Nice! This is just right! You found the optimal solution."
       })
     } else if (newSelection.length > 0) {
-      // Check if there's a better combination possible
-      const optimalReward = currentExample.solution.reduce(
-        (sum, id) => sum + currentExample.balls.find(b => b.id === id)!.reward,
-        0
-      )
-      if (newReward < optimalReward) {
-        setFeedback({
-          type: "suboptimal",
-          message: "Oops, some other combination will give you more reward!"
-        })
-      } else {
-        setFeedback({ type: "none", message: "" })
-      }
+      setFeedback({
+        type: "suboptimal",
+        message: "Oops, some other combination will give you more points!"
+      })
     } else {
       setFeedback({ type: "none", message: "" })
     }
@@ -202,7 +207,7 @@ function DynamicExample() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Balls display */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {currentExample.balls.map((ball) => (
               <motion.div
                 key={ball.id}
@@ -224,7 +229,7 @@ function DynamicExample() {
                 </div>
                 <div className="text-center">
                   <div className="font-bold text-sm">W: {ball.weight}</div>
-                  <div className="text-yellow-600 font-bold text-sm">R: {ball.reward}</div>
+                  <div className="text-yellow-600 font-bold text-sm">P: {ball.reward}</div>
                 </div>
                 {selectedBalls.includes(ball.id) && (
                   <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
@@ -244,7 +249,7 @@ function DynamicExample() {
               </span>
             </div>
             <div className="flex justify-between items-center mt-1">
-              <span className="font-medium">Reward:</span>
+              <span className="font-medium">Points:</span>
               <span className="text-yellow-600 font-bold">{currentReward} points</span>
             </div>
           </div>
@@ -268,13 +273,12 @@ function DynamicExample() {
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className={`p-3 rounded-lg border-2 text-sm ${
-                  feedback.type === "success"
-                    ? "bg-green-50 border-green-200 text-green-800"
-                    : feedback.type === "too_heavy"
+                className={`p-3 rounded-lg border-2 text-sm ${feedback.type === "success"
+                  ? "bg-green-50 border-green-200 text-green-800"
+                  : feedback.type === "too_heavy"
                     ? "bg-red-50 border-red-200 text-red-800"
                     : "bg-orange-50 border-orange-200 text-orange-800"
-                }`}
+                  }`}
               >
                 <div className="flex items-center">
                   {feedback.type === "success" && (
@@ -315,39 +319,19 @@ export default function TutorialPhase({ onNext }: TutorialPhaseProps) {
                   <Package className="h-8 w-8 text-blue-600" />
                   <h2 className="text-3xl font-bold text-gray-900">The Knapsack Problem</h2>
                 </div>
-                
+
                 <p className="text-xl text-gray-700 max-w-3xl mx-auto leading-relaxed">
-                  You will be answering a series of questions, each presenting what's called a "knapsack problem." 
+                  You will be answering a series of questions, each presenting what's called a "knapsack problem."
                   These are classic optimization puzzles where you need to make strategic choices to maximize your score.
                 </p>
               </div>
             </div>
-
-            <div className="bg-gradient-to-r from-green-50 to-yellow-50 p-8 rounded-xl border-2 border-green-200">
-              <div className="space-y-6">
-                <div className="flex items-center justify-center space-x-3">
-                  <DollarSign className="h-8 w-8 text-green-600" />
-                  <h2 className="text-3xl font-bold text-gray-900">Monetary Rewards</h2>
-                </div>
-                
-                <p className="text-xl text-gray-700 max-w-3xl mx-auto leading-relaxed">
-                  <strong>The more questions you answer correctly, the higher monetary reward you will receive.</strong> 
-                  Your performance directly impacts your compensation, so it pays to think carefully about each decision!
-                </p>
-                
-                <div className="bg-white p-4 rounded-lg shadow-sm max-w-lg mx-auto">
-                  <p className="text-lg text-gray-600">
-                    📚 <strong>Don't worry!</strong> We will have opportunities to practice before results count.
-                  </p>
-                </div>
-              </div>
             </div>
-          </div>
         </div>
       ),
     },
     {
-      title: "How to do the Knapsack Problem",
+      title: "What is a knapsack problem?",
       content: (
         <div className="grid lg:grid-cols-2 gap-8">
           {/* Left Column - Instructions */}
@@ -392,12 +376,24 @@ export default function TutorialPhase({ onNext }: TutorialPhaseProps) {
                       <div className="flex items-center">
                         <Coins className="h-3 w-3 mr-2 text-yellow-500" />
                         <span className="text-xs">
-                          <strong>Reward (R):</strong> Points you earn
+                          <strong>Points (P):</strong> Points you earn
                         </span>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Goal explanation */}
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mt-4">
+                  <p className="text-base sm:text-lg font-extrabold text-yellow-900 mb-2">
+                    Your goal
+                  </p>
+                  <ul className="list-disc list-inside text-sm sm:text-base text-yellow-900 space-y-1">
+                    <li>Select balls to be placed in the knapsack.</li>
+                    <li>Maximize the combined points.</li>
+                    <li>Keep the total weight below the knapsack’s capacity.</li>
+                  </ul>
+                </div>
               </div>
             </div>
 
@@ -419,30 +415,11 @@ export default function TutorialPhase({ onNext }: TutorialPhaseProps) {
       content: (
         <div className="max-w-4xl mx-auto space-y-8">
           <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-8 rounded-xl border-2 border-yellow-200">
-            <h3 className="text-3xl font-bold text-gray-900 mb-6 text-center">Maximize Your Reward Points!</h3>
-            <p className="text-xl text-gray-700 mb-8 text-center max-w-3xl mx-auto">
-              Select balls to collect the most reward points possible without exceeding the knapsack's capacity.
-            </p>
-
-            <div className="grid md:grid-cols-2 gap-8">
-              <div className="bg-white p-6 rounded-lg shadow-sm">
-                <h4 className="font-semibold text-green-700 mb-4 text-xl">✓ For Every Question</h4>
-                <ul className="text-lg text-gray-600 space-y-3">
-                  <li>• Click once to select a ball, click on a selected ball again to deselect</li>
-                  <li>• Find the combination of selected balls that maximizes the reward while keeping combined weights below capacity</li>
-                  <li>• Once you think you have the right selection, click "confirm answer" to lock in your selection</li>
-                </ul>
-              </div>
-
-              <div className="bg-white p-6 rounded-lg shadow-sm">
-                <h4 className="font-semibold text-blue-700 mb-4 text-xl">🎯 Scoring</h4>
-                <ul className="text-lg text-gray-600 space-y-3">
-                  <li>• Answer is considered correct if and only if you find the most optimal selection of balls</li>
-                  <li>• All-or-nothing scoring system</li>
-                  <li>• Partial credit is not awarded</li>
-                </ul>
-              </div>
-            </div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-6">Before showing you more knapsack problems, somethings to note:</h3>
+            <ol className="text-lg text-gray-700 space-y-4 list-decimal list-inside ml-4">
+              <li><strong>No partial credit:</strong> you must achieve the highest possible points while keeping combined weight under capacity for your answer to be considered correct</li>
+              <li>There is a weight/points counter on every question to help you.</li>
+            </ol>
           </div>
         </div>
       ),

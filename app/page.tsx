@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState, useMemo, useCallback, Suspense, lazy } from "react"
+import { useRouter } from "next/navigation"
 import { Progress } from "@/components/ui/progress"
-import { Gift, Trophy, Clock, Target, Brain } from "lucide-react"
+import { Gift, Trophy, Clock, Target, Brain, AlertCircle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { api } from "@/lib/api-client"
 
@@ -11,8 +12,9 @@ const IntroPhase = lazy(() => import("@/components/phases/intro-phase"))
 const TutorialPhase = lazy(() => import("@/components/phases/tutorial-phase"))
 const TrainingPhase1 = lazy(() => import("@/components/phases/training-phase-1"))
 const TrainingPhase2 = lazy(() => import("@/components/phases/training-phase-2"))
+const TransitionPhase = lazy(() => import("@/components/phases/transition-phase"))
+const RandomizedInstructionsPhase = lazy(() => import("@/components/phases/randomized-instructions-phase"))
 const BenchmarkPhase = lazy(() => import("@/components/phases/benchmark-phase"))
-const StrategyPhase = lazy(() => import("@/components/phases/strategy-phase"))
 const PredictionPhase = lazy(() => import("@/components/phases/prediction-phase"))
 const ResultsPhase = lazy(() => import("@/components/phases/results-phase"))
 
@@ -30,14 +32,16 @@ const phases = [
   { id: "intro", name: "Welcome", icon: Gift, color: "bg-blue-500" },
   { id: "tutorial", name: "Tutorial", icon: Brain, color: "bg-green-500" },
   { id: "training1", name: "Practice", icon: Target, color: "bg-yellow-500" },
-  { id: "training2", name: "Skills Test", icon: Clock, color: "bg-orange-500" },
-  { id: "benchmark", name: "Benchmark", icon: Trophy, color: "bg-purple-500" },
-  { id: "strategy", name: "Strategy", icon: Brain, color: "bg-indigo-500" },
-  { id: "prediction", name: "Final Test", icon: Target, color: "bg-red-500" },
+  { id: "training2", name: "Test 1", icon: Clock, color: "bg-orange-500" },
+  { id: "transition", name: "Instructions", icon: AlertCircle, color: "bg-indigo-500" },
+  { id: "randomized-instructions", name: "Test Format", icon: Target, color: "bg-indigo-500" },
+  { id: "benchmark", name: "Test 2", icon: Trophy, color: "bg-purple-500" },
+  { id: "prediction", name: "Test 3", icon: Target, color: "bg-red-500" },
   { id: "results", name: "Results", icon: Gift, color: "bg-emerald-500" },
 ]
 
 export default function KnapsackExperiment() {
+  const router = useRouter()
   const [currentPhase, setCurrentPhase] = useState("intro")
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [participantData, setParticipantData] = useState({
@@ -65,9 +69,9 @@ export default function KnapsackExperiment() {
     // Check for Prolific parameters - REQUIRED for access
     const urlParams = new URLSearchParams(window.location.search)
     const prolificPid = urlParams.get('PROLIFIC_PID')
-    const studyId = urlParams.get('STUDY_ID') 
+    const studyId = urlParams.get('STUDY_ID')
     const sessionId = urlParams.get('SESSION_ID')
-    
+
     // DEBUG: Log parameters to help troubleshoot
     console.log('[Access Check] Prolific Parameters:', {
       prolificPid,
@@ -76,67 +80,67 @@ export default function KnapsackExperiment() {
       fullURL: window.location.href,
       searchParams: window.location.search
     })
-    
+
     // Set Prolific parameters
     setProlificParams({
       prolificPid,
-      studyId, 
+      studyId,
       sessionId,
     })
 
     // TEMPORARILY DISABLED FOR TESTING: Access restriction removed
     // TODO: Re-enable before production launch
-    /*
     // SECURITY: Only allow access with valid Prolific parameters
     // Check if parameters are template variables (not replaced by Prolific)
     const hasTemplateVariables = prolificPid?.includes('{{') || studyId?.includes('{{') || sessionId?.includes('{{')
+
+    // Allow access from CoLab internal system (studyId = 'colab-knapsack')
+    const isColabInternal = studyId === 'colab-knapsack' || prolificPid?.includes('@')
     
     if (!prolificPid || !studyId || !sessionId || hasTemplateVariables) {
-      console.error('[Access Denied] Invalid or missing parameters:', {
+      console.error('[Access Check] Invalid or missing parameters:', {
         hasTemplateVariables,
         prolificPid: prolificPid || 'MISSING',
         studyId: studyId || 'MISSING',
-        sessionId: sessionId || 'MISSING'
+        sessionId: sessionId || 'MISSING',
+        isColabInternal
       })
-      setAccessAllowed(false)
-      setIsCheckingAccess(false)
-      return
+
+      // Allow if it's from CoLab internal system
+      if (isColabInternal && prolificPid && studyId && sessionId) {
+        console.log('[CoLab Access] Allowing internal access')
+        // Continue to registration below
+      } else {
+        // Fallback path — no Prolific params on this page load.
+        // Re-entry case (e.g. "View experiment again" from results screen): we want
+        // the student to see their results even if sessionStorage was wiped (closed
+        // tab, different browser session, etc.). Check localStorage as the more
+        // durable secondary cache; if it has a participantId, treat the visit as
+        // a results-only re-entry and skip the gate.
+        const storedSession = sessionStorage.getItem('participantId')
+        const storedLocal = localStorage.getItem('participantId')
+        const storedParticipantId = storedSession || storedLocal
+        if (storedParticipantId) {
+          // Mirror to sessionStorage so the rest of the app keeps working unchanged.
+          if (!storedSession) sessionStorage.setItem('participantId', storedLocal!)
+          setParticipantId(storedParticipantId)
+          setAccessAllowed(true)
+          setIsCheckingAccess(false)
+          return
+        }
+
+        console.log('[Auth] No session found, redirecting to login')
+        router.push('/auth')
+        return
+      }
     }
-    */
-    
+
+    /*
     // TEST MODE: Allow access without Prolific parameters
     console.log('[TEST MODE] Access allowed for everyone')
-    
-    // If no Prolific params, create a test participant
-    if (!prolificPid || !studyId || !sessionId) {
-      console.log('[TEST MODE] No Prolific params, registering test participant with backend')
-      // Register with backend to get a valid participantId
-      api.register()
-        .then((data) => {
-          if (cancelled) return
-          const id = data.participantId
-          console.log('[TEST MODE] Test participant registered:', id)
-          setParticipantId(id)
-          localStorage.setItem('participantId', id)
-          localStorage.setItem('prolificPid', `test-${id}`)
-          setAccessAllowed(true)
-          setIsCheckingAccess(false)
-        })
-        .catch((error) => {
-          if (cancelled) return
-          console.error('[TEST MODE] Failed to register test participant:', error)
-          // Fallback: create local ID but warn user
-          const testId = window.crypto.randomUUID()
-          setParticipantId(testId)
-          localStorage.setItem('participantId', testId)
-          localStorage.setItem('prolificPid', `test-${testId}`)
-          setAccessAllowed(true)
-          setIsCheckingAccess(false)
-          console.warn('[TEST MODE] Using local participant ID - backend registration failed')
-        })
-      return
-    }
-    
+    */
+
+
     console.log('[Access Check] Parameters valid, proceeding with registration...')
 
     // TEMPORARILY DISABLED FOR TESTING: Always verify with backend first to prevent duplicate participants
@@ -162,19 +166,37 @@ export default function KnapsackExperiment() {
         if (participantStatus.exists && !participantStatus.completed && participantStatus.participantId) {
           // Use backend's participantId (always authoritative)
           const backendParticipantId = participantStatus.participantId
-          
+
           // Check if cached participantId matches backend
-          const cachedParticipantId = localStorage.getItem('participantId')
+          const cachedParticipantId = sessionStorage.getItem('participantId')
           if (cachedParticipantId !== backendParticipantId) {
             // Mismatch: clear cache and use backend's ID
             console.warn(`[Participant Mismatch] Cached: ${cachedParticipantId}, Backend: ${backendParticipantId}. Using backend ID.`)
-            localStorage.removeItem('participantId')
-            localStorage.removeItem('prolificPid')
+            sessionStorage.removeItem('participantId')
+            sessionStorage.removeItem('prolificPid')
           }
-          
+
           setParticipantId(backendParticipantId)
+          sessionStorage.setItem('participantId', backendParticipantId)
+          sessionStorage.setItem('prolificPid', prolificPid)
           localStorage.setItem('participantId', backendParticipantId)
-          localStorage.setItem('prolificPid', prolificPid)
+
+          // Resume: skip ahead to the next phase the student hasn't finished.
+          // Map completedPhases (0..5) to the phase id they should land on.
+          // 0 = nothing done (intro), 1 = practice done (training2), etc.
+          const completed = participantStatus.completedPhases || 0
+          const resumePhase = (
+            completed === 0 ? 'intro' :
+            completed === 1 ? 'training2' :
+            completed === 2 ? 'benchmark' :
+            completed === 3 ? 'prediction' :
+            'results'
+          )
+          if (resumePhase !== 'intro') {
+            console.log(`[Resume] ${completed} phase(s) already done; jumping to "${resumePhase}"`)
+            setCurrentPhase(resumePhase)
+          }
+
           setAccessAllowed(true)
           setIsCheckingAccess(false)
           return
@@ -186,29 +208,31 @@ export default function KnapsackExperiment() {
             .then((data) => {
               if (cancelled) return
               const id = data.participantId
-              
+
               // Clear any old cached data before setting new
-              localStorage.removeItem('participantId')
-              localStorage.removeItem('prolificPid')
-              
+              sessionStorage.removeItem('participantId')
+              sessionStorage.removeItem('prolificPid')
+
               setParticipantId(id)
+              sessionStorage.setItem('participantId', id)
+              sessionStorage.setItem('prolificPid', prolificPid)
               localStorage.setItem('participantId', id)
-              localStorage.setItem('prolificPid', prolificPid)
               setAccessAllowed(true)
               setIsCheckingAccess(false)
             })
             .catch((registerError: any) => {
               if (cancelled) return
               console.error('[Registration Error]', registerError)
-              
+
               // If registration fails, try checking again (might have been created by another request)
               return api.checkParticipant(prolificPid)
                 .then((retryStatus) => {
                   if (cancelled) return
                   if (retryStatus.exists && retryStatus.participantId) {
                     setParticipantId(retryStatus.participantId)
+                    sessionStorage.setItem('participantId', retryStatus.participantId)
+                    sessionStorage.setItem('prolificPid', prolificPid)
                     localStorage.setItem('participantId', retryStatus.participantId)
-                    localStorage.setItem('prolificPid', prolificPid)
                     setAccessAllowed(true)
                     setIsCheckingAccess(false)
                   } else {
@@ -224,9 +248,9 @@ export default function KnapsackExperiment() {
       })
       .catch((error) => {
         if (cancelled) return
-        
+
         console.error('[Check Participant Error]', error)
-        
+
         if (error.message?.includes('already completed')) {
           setShowCompletedMessage(true)
         }
@@ -238,14 +262,14 @@ export default function KnapsackExperiment() {
       cancelled = true
     }
   }, [])
-  
+
 
   // Memoize expensive calculations
   const currentPhaseIndex = useMemo(
     () => phases.findIndex((p) => p.id === currentPhase),
     [currentPhase]
   )
-  
+
   const progress = useMemo(
     () => ((currentPhaseIndex + 1) / phases.length) * 100,
     [currentPhaseIndex]
@@ -257,25 +281,6 @@ export default function KnapsackExperiment() {
       setCurrentPhase(phases[nextIndex].id)
     }
   }, [currentPhaseIndex])
-
-  const completeProlificStudy = useCallback(async () => {
-    if (prolificParams.prolificPid && participantId) {
-      try {
-        await api.post('/api/v1/complete-participant', {
-          participantId,
-          prolificPid: prolificParams.prolificPid,
-          completedAt: new Date().toISOString()
-        })
-      } catch (error) {
-        console.error("[Completion] Failed to mark participant as completed:", error)
-      }
-      
-      localStorage.removeItem('participantId')
-      localStorage.removeItem('prolificPid')
-      
-      window.location.href = `https://app.prolific.co/submissions/complete?cc=KNAPSACK2024`
-    }
-  }, [prolificParams.prolificPid, participantId])
 
   const updateParticipantData = useCallback((data: any) => {
     setParticipantData((prev) => ({
@@ -289,7 +294,8 @@ export default function KnapsackExperiment() {
     onNext: nextPhase,
     participantData,
     updateParticipantData,
-  }), [nextPhase, participantData, updateParticipantData])
+    participantId,
+  }), [nextPhase, participantData, updateParticipantData, participantId])
 
   const renderPhase = useMemo(() => {
     switch (currentPhase) {
@@ -301,10 +307,12 @@ export default function KnapsackExperiment() {
         return <TrainingPhase1 {...phaseProps} />
       case "training2":
         return <TrainingPhase2 {...phaseProps} />
+      case "transition":
+        return <TransitionPhase onNext={nextPhase} />
+      case "randomized-instructions":
+        return <RandomizedInstructionsPhase onNext={nextPhase} />
       case "benchmark":
         return <BenchmarkPhase {...phaseProps} />
-      case "strategy":
-        return <StrategyPhase {...phaseProps} benchmarkData={participantData.benchmark || {}} />
       case "prediction":
         return <PredictionPhase {...phaseProps} />
       case "results":
@@ -441,8 +449,8 @@ export default function KnapsackExperiment() {
               const isCompleted = index < currentPhaseIndex
 
               return (
-                <motion.div 
-                  key={phase.id} 
+                <motion.div
+                  key={phase.id}
                   className="flex flex-col items-center"
                   whileHover={{ scale: 1.05 }}
                   transition={{ duration: 0.2 }}
@@ -450,12 +458,12 @@ export default function KnapsackExperiment() {
                   <div
                     className={`
                     w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg transition-all duration-300
-                    ${isActive 
-                      ? "bg-gradient-to-br from-blue-500 to-purple-600 ring-4 ring-blue-200" 
-                      : isCompleted 
-                        ? "bg-gradient-to-br from-green-500 to-emerald-600" 
-                        : "bg-gray-300"
-                    }
+                    ${isActive
+                        ? "bg-gradient-to-br from-blue-500 to-purple-600 ring-4 ring-blue-200"
+                        : isCompleted
+                          ? "bg-gradient-to-br from-green-500 to-emerald-600"
+                          : "bg-gray-300"
+                      }
                   `}
                   >
                     {isCompleted ? <Trophy className="h-6 w-6" /> : <Icon className="h-6 w-6" />}
@@ -463,12 +471,12 @@ export default function KnapsackExperiment() {
                   <span
                     className={`
                     text-xs mt-2 text-center font-medium px-2 py-1 rounded-full
-                    ${isActive 
-                      ? "text-blue-900 bg-blue-100" 
-                      : isCompleted 
-                        ? "text-green-900 bg-green-100"
-                        : "text-gray-600"
-                    }
+                    ${isActive
+                        ? "text-blue-900 bg-blue-100"
+                        : isCompleted
+                          ? "text-green-900 bg-green-100"
+                          : "text-gray-600"
+                      }
                   `}
                   >
                     {phase.name}

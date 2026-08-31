@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { useTimeTracker } from "@/lib/time-tracker"
+import { useState, useEffect, useRef, useMemo } from "react"
+import { useTimeTracker, timeTracker } from "@/lib/time-tracker"
+import { uploadPhase } from "@/lib/phase-uploader"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -9,149 +10,18 @@ import { Progress } from "@/components/ui/progress"
 import { Clock, Zap, Trophy, AlertTriangle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import KnapsackQuestion from "@/components/knapsack-question"
+import { getSkillTestQuestions, type Question } from "@/lib/participant-loader"
 
 interface TrainingPhase2Props {
   onNext: () => void
   participantData: any
   updateParticipantData: (data: any) => void
+  participantId: string | null
 }
 
-const skillsQuestions = [
-  // Easy questions (1-3)
-  {
-    id: 1,
-    capacity: 10,
-    balls: [
-      { id: 1, weight: 6, reward: 18, color: "bg-red-500" },
-      { id: 2, weight: 4, reward: 12, color: "bg-blue-500" },
-      { id: 3, weight: 3, reward: 9, color: "bg-green-500" },
-    ],
-    solution: [1, 2],
-    difficulty: "easy",
-  },
-  {
-    id: 2,
-    capacity: 12,
-    balls: [
-      { id: 1, weight: 5, reward: 15, color: "bg-purple-500" },
-      { id: 2, weight: 7, reward: 21, color: "bg-yellow-500" },
-      { id: 3, weight: 4, reward: 12, color: "bg-pink-500" },
-      { id: 4, weight: 3, reward: 9, color: "bg-indigo-500" },
-    ],
-    solution: [2, 3],
-    difficulty: "easy",
-  },
-  {
-    id: 3,
-    capacity: 15,
-    balls: [
-      { id: 1, weight: 8, reward: 24, color: "bg-red-500" },
-      { id: 2, weight: 6, reward: 18, color: "bg-blue-500" },
-      { id: 3, weight: 5, reward: 15, color: "bg-green-500" },
-      { id: 4, weight: 4, reward: 12, color: "bg-yellow-500" },
-    ],
-    solution: [1, 2],
-    difficulty: "easy",
-  },
-  // Medium questions (4-7)
-  {
-    id: 4,
-    capacity: 18,
-    balls: [
-      { id: 1, weight: 9, reward: 27, color: "bg-orange-500" },
-      { id: 2, weight: 7, reward: 21, color: "bg-teal-500" },
-      { id: 3, weight: 6, reward: 18, color: "bg-rose-500" },
-      { id: 4, weight: 5, reward: 15, color: "bg-cyan-500" },
-      { id: 5, weight: 4, reward: 12, color: "bg-lime-500" },
-    ],
-    solution: [1, 2],
-    difficulty: "medium",
-  },
-  {
-    id: 5,
-    capacity: 20,
-    balls: [
-      { id: 1, weight: 10, reward: 30, color: "bg-red-500" },
-      { id: 2, weight: 8, reward: 24, color: "bg-blue-500" },
-      { id: 3, weight: 6, reward: 18, color: "bg-green-500" },
-      { id: 4, weight: 5, reward: 15, color: "bg-yellow-500" },
-      { id: 5, weight: 4, reward: 12, color: "bg-purple-500" },
-    ],
-    solution: [1, 2],
-    difficulty: "medium",
-  },
-  {
-    id: 6,
-    capacity: 22,
-    balls: [
-      { id: 1, weight: 12, reward: 36, color: "bg-indigo-500" },
-      { id: 2, weight: 10, reward: 30, color: "bg-pink-500" },
-      { id: 3, weight: 8, reward: 24, color: "bg-orange-500" },
-      { id: 4, weight: 6, reward: 18, color: "bg-teal-500" },
-      { id: 5, weight: 5, reward: 15, color: "bg-rose-500" },
-    ],
-    solution: [1, 2],
-    difficulty: "medium",
-  },
-  {
-    id: 7,
-    capacity: 25,
-    balls: [
-      { id: 1, weight: 15, reward: 45, color: "bg-cyan-500" },
-      { id: 2, weight: 12, reward: 36, color: "bg-lime-500" },
-      { id: 3, weight: 10, reward: 30, color: "bg-amber-500" },
-      { id: 4, weight: 8, reward: 24, color: "bg-emerald-500" },
-      { id: 5, weight: 6, reward: 18, color: "bg-violet-500" },
-    ],
-    solution: [1, 4],
-    difficulty: "medium",
-  },
-  // Hard questions (8-10)
-  {
-    id: 8,
-    capacity: 30,
-    balls: [
-      { id: 1, weight: 18, reward: 54, color: "bg-red-500" },
-      { id: 2, weight: 15, reward: 45, color: "bg-blue-500" },
-      { id: 3, weight: 12, reward: 36, color: "bg-green-500" },
-      { id: 4, weight: 10, reward: 30, color: "bg-yellow-500" },
-      { id: 5, weight: 8, reward: 24, color: "bg-purple-500" },
-      { id: 6, weight: 6, reward: 18, color: "bg-pink-500" },
-    ],
-    solution: [1, 3],
-    difficulty: "hard",
-  },
-  {
-    id: 9,
-    capacity: 35,
-    balls: [
-      { id: 1, weight: 20, reward: 60, color: "bg-indigo-500" },
-      { id: 2, weight: 18, reward: 54, color: "bg-orange-500" },
-      { id: 3, weight: 15, reward: 45, color: "bg-teal-500" },
-      { id: 4, weight: 12, reward: 36, color: "bg-rose-500" },
-      { id: 5, weight: 10, reward: 30, color: "bg-cyan-500" },
-      { id: 6, weight: 8, reward: 24, color: "bg-lime-500" },
-    ],
-    solution: [1, 3],
-    difficulty: "hard",
-  },
-  {
-    id: 10,
-    capacity: 40,
-    balls: [
-      { id: 1, weight: 25, reward: 75, color: "bg-amber-500" },
-      { id: 2, weight: 20, reward: 60, color: "bg-emerald-500" },
-      { id: 3, weight: 18, reward: 54, color: "bg-violet-500" },
-      { id: 4, weight: 15, reward: 45, color: "bg-sky-500" },
-      { id: 5, weight: 12, reward: 36, color: "bg-stone-500" },
-      { id: 6, weight: 10, reward: 30, color: "bg-red-500" },
-    ],
-    solution: [1, 4],
-    difficulty: "hard",
-  },
-]
+// Questions loaded dynamically from static-questions.json via participant-loader
 
-export default function TrainingPhase2({ onNext, updateParticipantData }: TrainingPhase2Props) {
+export default function TrainingPhase2({ onNext, updateParticipantData, participantId }: TrainingPhase2Props) {
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState<
     Array<{ questionId: number; selected: number[]; correct: boolean; confirmed: boolean; timeSpent: number }>
@@ -162,7 +32,15 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
   const [totalTimeLeft, setTotalTimeLeft] = useState(15 * 60)
   const [questionStartTime, setQuestionStartTime] = useState<number>(0)
   const [isComplete, setIsComplete] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const hasCompleted = useRef(false)
+
+  // Load questions dynamically from the question bank (all 6-ball)
+  const [skillsQuestions, setSkillsQuestions] = useState<Question[]>([])
+  useEffect(() => {
+    const questions = getSkillTestQuestions()
+    setSkillsQuestions(questions)
+  }, [])
 
   // Total timer
   useEffect(() => {
@@ -196,7 +74,7 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
     const endTime = Date.now()
     const timeSpent = endTime - questionStartTime
     const questionId = skillsQuestions[currentQuestion].id
-    
+
     // Log interaction
     timeTracker.logInteraction('answer_confirmed', {
       questionId,
@@ -257,14 +135,14 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
     const correctCount = answers.filter((a) => a.correct).length
     const incorrectCount = answers.filter((a) => a.selected.length > 0 && !a.correct).length
     const unansweredCount = skillsQuestions.length - correctCount - incorrectCount
-    
+
     // Calculate total points: 2 points per correct, 1 point per unanswered, 0 per incorrect
     const totalPoints = (correctCount * 2) + (unansweredCount * 1) + (incorrectCount * 0)
     const maxPoints = skillsQuestions.length * 2 // 10 questions × 2 = 20 max points
 
     const payload = {
       phase: "skill",
-      participantId: localStorage.getItem("participantId"),
+      participantId: participantId,
       data: {
         completed: true,
         correctAnswers: correctCount,
@@ -275,46 +153,26 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
         totalQuestions: skillsQuestions.length,
         accuracy: correctCount / skillsQuestions.length,
         timeUsed: 15 * 60 - totalTimeLeft,
-        answers,
+        answers: answers.map(answer => ({
+          ...answer,
+          difficulty: skillsQuestions.find(q => q.id === answer.questionId)?.difficulty || 'unknown'
+        })),
         questionTimes: answers.map(answer => ({
           questionId: answer.questionId,
-          startTime: 0, // Will be populated by actual timing
+          startTime: 0,
           endTime: 0,
-          timeSpent: answer.timeSpent
-        }))
+          timeSpent: answer.timeSpent,
+          difficulty: skillsQuestions.find(q => q.id === answer.questionId)?.difficulty || 'unknown'
+        })),
+        interactions: timeTracker.getAllInteractions()
       },
     }
 
-     try {
-       const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com"
-       
-       // Add timeout to prevent hanging
-       const controller = new AbortController()
-       const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
-
-       const res = await fetch(`${API_BASE}/api/v1/ingest-phase`, {
-         method: "POST",
-         headers: { "Content-Type": "application/json" },
-         body: JSON.stringify(payload),
-         signal: controller.signal
-       })
-
-       clearTimeout(timeoutId)
-
-      if (!res.ok) {
-        const text = await res.text()
-        console.error("[Test 1] Server error:", res.status, text)
-        throw new Error(`Failed to submit test data (status ${res.status})`)
-      }
-      
-      updateParticipantData({ training2: payload.data, totalScore: totalPoints })
-      onNext()
-    } catch (err) {
-      console.error("[Test 1] Failed to submit:", err)
-      // Proceed with local data if backend unavailable
-      updateParticipantData({ training2: payload.data, totalScore: totalPoints })
-      onNext()
-    }
+    setIsSaving(true)
+    const result = await uploadPhase(payload as any)
+    if (!result.success) console.warn("[Test 1] Upload failed — stashed for replay", result)
+    updateParticipantData({ training2: payload.data, totalScore: totalPoints })
+    setIsSaving(false)
   }
 
   const startPhase = () => {
@@ -330,12 +188,50 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
   }
 
   const question = skillsQuestions[currentQuestion]
+
+  const shuffledQuestion = useMemo(() => {
+    if (!question) return question;
+
+    // Create a shallow copy of the question
+    const qCopy = { ...question };
+
+    // Create a shallow copy of the balls array and shuffle it
+    // Using Fisher-Yates logic
+    const shuffledBalls = [...qCopy.balls];
+    for (let i = shuffledBalls.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledBalls[i], shuffledBalls[j]] = [shuffledBalls[j], shuffledBalls[i]];
+    }
+
+    qCopy.balls = shuffledBalls;
+    return qCopy;
+  }, [question]);
+
+  // Guard: Don't render question UI if questions haven't loaded yet
+  if (skillsQuestions.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <Card className="shadow-lg">
+          <CardContent className="p-8 text-center">
+            <div className="space-y-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl mb-4">
+                <Zap className="h-8 w-8 text-white animate-pulse" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">Loading Test 1 Questions</h2>
+              <p className="text-gray-600">Preparing your questions...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   const progress = ((currentQuestion + 1) / skillsQuestions.length) * 100
   const difficultyColor = {
     easy: "bg-green-500",
     medium: "bg-yellow-500",
     hard: "bg-red-500",
-  }[question.difficulty]
+  }[question?.difficulty ?? "easy"]
   if (showInstructions) {
     return (
       <div className="max-w-7xl mx-auto">
@@ -354,7 +250,6 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
               <div className="space-y-6 text-orange-700">
                 <p className="text-xl">
                   In this section, you will complete <strong>10 questions</strong> in Test 1.
-                  Once you start, you will have <strong>90 seconds on each question</strong>.
                 </p>
 
                 <div className="grid md:grid-cols-2 gap-6">
@@ -364,29 +259,21 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
                       Rules
                     </h4>
                     <ul className="text-lg space-y-3">
-                      <li>• You have 90 seconds to complete each question.</li>
                       <li>• <strong>You cannot come back to previous questions after seeing later questions</strong>, so answer questions you wish before moving on.</li>
-                      <li>• <strong>Guessing is penalized!</strong> Please only answer questions you wish to answer.</li>
-                      <li>• Only questions confirmed are considered answered, unconfirmed questions are considered unanswered!</li>
-                      <li>• Auto-submit when time runs out.</li>
+                      <li>• <strong>Guessing is penalized!</strong> Skip questions you do not want to answer.</li>
+                      <li>• Auto-skip when timed out.</li>
                     </ul>
                   </div>
-
+                  
                   <div className="bg-white p-6 rounded-lg">
                     <h4 className="text-xl font-semibold mb-4 flex items-center">
                       <Trophy className="h-5 w-5 mr-2" />
                       Scoring
                     </h4>
                     <ul className="text-lg space-y-3">
-                      <li>
-                        • <strong>Correct answers</strong>: You are rewarded 2 <strong>probability points</strong>
-                      </li>
-                      <li>
-                        • <strong>Incorrect answers</strong>: You are NOT rewarded <strong>probability points</strong>
-                      </li>
-                      <li>
-                        • <strong>Unanswered questions</strong>: You are rewarded 1 <strong>probability point</strong>
-                      </li>
+                      <li>• <strong>Correct answers</strong>: 2 points</li>
+                      <li>• <strong>Incorrect answers</strong>: 0 points</li>
+                      <li>• <strong>Unanswered/Skipped</strong>: 1 point</li>
                     </ul>
                   </div>
                 </div>
@@ -394,11 +281,10 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
                 <div className="bg-red-100 border border-red-300 rounded-lg p-6">
                   <div className="flex items-center mb-4">
                     <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-                    <h4 className="text-xl font-semibold text-red-800">Important Reminders</h4>
+                    <h4 className="text-xl font-semibold text-red-800">Important Reminder</h4>
                   </div>
                   <ul className="text-lg text-red-700 space-y-3">
                     <li>• If you attempted a question but do not wish to answer it, no need to deselect the balls, just leave the question unconfirmed.</li>
-                    <li>• Focus on accuracy over speed.</li>
                   </ul>
                 </div>
               </div>
@@ -420,7 +306,7 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
     const correctAnswers = answers.filter((a) => a.correct).length
     const unansweredQuestions = answers.filter((a) => a.selected.length === 0).length
     const incorrectAnswers = answers.filter((a) => a.selected.length > 0 && !a.correct).length
-    
+
     // Calculate points: 2 points per correct, 1 point per unanswered, 0 per incorrect
     const totalPoints = (correctAnswers * 2) + (unansweredQuestions * 1) + (incorrectAnswers * 0)
     const maxPoints = skillsQuestions.length * 2 // 20 max points
@@ -438,39 +324,8 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
           <CardContent className="space-y-6">
             <div className="text-center">
               <div className="bg-gradient-to-r from-green-50 to-blue-50 p-8 rounded-xl">
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">Your Performance Summary</h3>
-
-                <div className="grid md:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <div className="text-3xl font-bold text-green-600">{correctAnswers}</div>
-                    <div className="text-sm text-gray-600">Correct</div>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <div className="text-3xl font-bold text-yellow-600">{unansweredQuestions}</div>
-                    <div className="text-sm text-gray-600">Unanswered</div>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <div className="text-3xl font-bold text-red-600">{incorrectAnswers}</div>
-                    <div className="text-sm text-gray-600">Incorrect</div>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-lg shadow-sm border-2 border-blue-500">
-                    <div className="text-3xl font-bold text-blue-600">{totalPoints}/{maxPoints}</div>
-                    <div className="text-sm text-gray-600">Points Earned</div>
-                  </div>
-                </div>
-
-                <div className="bg-blue-100 border border-blue-300 rounded-lg p-4 mb-6">
-                  <p className="text-blue-800 font-medium">
-                    You earned <strong>{totalPoints} out of {maxPoints}</strong> points!
-                  </p>
-                  <p className="text-blue-700 text-sm mt-2">
-                    Scoring: 2 points per correct answer, 1 point per unanswered question, 0 points per incorrect answer.
-                  </p>
-                </div>
-
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Thank you for completing Test 1!</h3>
+                <p className="text-lg text-gray-600 mb-6">Click below to continue to the next test.</p>
                 <Button onClick={onNext} size="lg">
                   Continue to Test 2
                 </Button>
@@ -482,7 +337,16 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
     )
   }
 
- 
+  if (isSaving) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-orange-600 border-r-transparent mb-4"></div>
+          <p className="text-gray-600">Saving your results...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -493,9 +357,8 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
               <span className="text-sm font-medium">
                 Question {currentQuestion + 1} of {skillsQuestions.length}
               </span>
-              <Badge className={`text-white ${difficultyColor}`}>{question.difficulty.toUpperCase()}</Badge>
             </div>
-            
+
           </div>
           <Progress value={progress} className="h-2" />
         </CardContent>
@@ -503,7 +366,7 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
 
       <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
         <p className="text-red-700 font-medium text-sm">
-          🚨 Confirm answers or they will be considered unanswered!
+          🚨 Confirm answers or they will be considered unanswered! Or skip if you do not wish to answer.
         </p>
       </div>
 
@@ -515,7 +378,7 @@ export default function TrainingPhase2({ onNext, updateParticipantData }: Traini
           exit={{ opacity: 0, x: -20 }}
         >
           <KnapsackQuestion
-            question={question}
+            question={shuffledQuestion}
             onAnswer={handleAnswer}
             onSkip={skipQuestion}
             isInteractive={true}

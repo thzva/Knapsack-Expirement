@@ -130,7 +130,7 @@ export function getPracticeQuestions(): Question[] {
   const medium = getRandomQuestions('training', 2, 'medium');
   const hard = getRandomQuestions('training', 2, 'hard');
   
-  return [...easy, ...medium, ...hard];
+  return [...easy, ...medium, ...hard].sort(() => Math.random() - 0.5);
 }
 
 /**

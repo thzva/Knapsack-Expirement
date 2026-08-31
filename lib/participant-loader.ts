@@ -37,15 +37,43 @@ interface QuestionSet {
 }
 
 /**
- * Shuffle array using Fisher-Yates algorithm
+ * Shuffle array using Fisher-Yates algorithm.
+ * If `seed` is provided, the shuffle becomes deterministic — same seed = same order.
+ * Lets us re-derive the SAME 30 questions when a student refreshes mid-phase
+ * (otherwise their already-confirmed answer keys wouldn't match the new shuffle).
  */
-function shuffle<T>(array: T[]): T[] {
+function shuffle<T>(array: T[], seed?: number): T[] {
   const shuffled = [...array];
+  const rand = seed != null ? seededRand(seed) : Math.random;
   for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   return shuffled;
+}
+
+// Mulberry32 — small deterministic PRNG. Returns [0, 1).
+function seededRand(seed: number): () => number {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return h >>> 0;
+}
+
+// Public helper for callers that want a phase-scoped seed from a participant id.
+export function seedFor(participantId: string | null | undefined, phase: string): number | undefined {
+  if (!participantId) return undefined;
+  return hashString(`${participantId}::${phase}`);
 }
 
 /**
@@ -77,7 +105,7 @@ function randomizeQuestionOrder(
   const shuffledEasy = shuffle(easyQuestions);
   const shuffledMedium = shuffle(mediumQuestions);
   const shuffledHard = shuffle(hardQuestions);
-  
+
   const result: Question[] = [];
   let easyIndex = 0;
   let mediumIndex = 0;
@@ -85,13 +113,13 @@ function randomizeQuestionOrder(
   let eRemaining = easyCount;
   let mRemaining = mediumCount;
   let hRemaining = hardCount;
-  
+
   const total = easyCount + mediumCount + hardCount;
-  
+
   for (let i = 0; i < total; i++) {
     const totalRemaining = eRemaining + mRemaining + hRemaining;
     const rand = Math.random() * totalRemaining;
-    
+
     if (rand < eRemaining && easyIndex < shuffledEasy.length) {
       result.push(shuffledEasy[easyIndex++]);
       eRemaining--;
@@ -109,96 +137,30 @@ function randomizeQuestionOrder(
       mRemaining--;
     }
   }
-  
+
   return result;
 }
+
+
 
 /**
  * Get practice questions (hardcoded 6 questions: 2 easy + 2 medium + 2 hard)
  */
 export function getPracticeQuestions(): Question[] {
-  const practiceQuestions: Question[] = [
-    {
-      id: 1,
-      capacity: 8,
-      balls: [
-        { id: 1, weight: 3, reward: 12, color: "bg-red-500" },
-        { id: 2, weight: 4, reward: 10, color: "bg-blue-500" },
-        { id: 3, weight: 2, reward: 8, color: "bg-green-500" },
-        { id: 4, weight: 5, reward: 15, color: "bg-yellow-500" }
-      ],
-      solution: [1, 4],
-      explanation: "Select items 1 and 4 for total weight 8 and reward 27, using the full capacity.",
-      difficulty: "easy"
-    },
-    {
-      id: 2,
-      capacity: 10,
-      balls: [
-        { id: 1, weight: 4, reward: 15, color: "bg-yellow-500" },
-        { id: 2, weight: 3, reward: 12, color: "bg-purple-500" },
-        { id: 3, weight: 5, reward: 18, color: "bg-pink-500" },
-        { id: 4, weight: 2, reward: 10, color: "bg-indigo-500" }
-      ],
-      solution: [2, 3, 4],
-      explanation: "Select items 2, 3, and 4 for total weight 10 and reward 40, using the full capacity.",
-      difficulty: "easy"
-    },
-    {
-      id: 3,
-      capacity: 12,
-      balls: [
-        { id: 1, weight: 4, reward: 16, color: "bg-indigo-500" },
-        { id: 2, weight: 3, reward: 12, color: "bg-orange-500" },
-        { id: 3, weight: 5, reward: 20, color: "bg-teal-500" },
-        { id: 4, weight: 2, reward: 8, color: "bg-rose-500" }
-      ],
-      solution: [1, 2, 3],
-      explanation: "Select items 1, 2, and 3 for total weight 12 and reward 48, using the full capacity.",
-      difficulty: "medium"
-    },
-    {
-      id: 4,
-      capacity: 15,
-      balls: [
-        { id: 1, weight: 5, reward: 20, color: "bg-cyan-500" },
-        { id: 2, weight: 3, reward: 15, color: "bg-lime-500" },
-        { id: 3, weight: 4, reward: 18, color: "bg-amber-500" },
-        { id: 4, weight: 6, reward: 22, color: "bg-emerald-500" }
-      ],
-      solution: [1, 3, 4],
-      explanation: "Select items 1, 3, and 4 for total weight 15 and reward 60, using the full capacity.",
-      difficulty: "medium"
-    },
-    {
-      id: 5,
-      capacity: 18,
-      balls: [
-        { id: 1, weight: 6, reward: 24, color: "bg-violet-500" },
-        { id: 2, weight: 4, reward: 18, color: "bg-sky-500" },
-        { id: 3, weight: 5, reward: 22, color: "bg-stone-500" },
-        { id: 4, weight: 3, reward: 15, color: "bg-slate-500" }
-      ],
-      solution: [1, 2, 3, 4],
-      explanation: "Select all items 1, 2, 3, and 4 for total weight 18 and reward 79, using the full capacity.",
-      difficulty: "hard"
-    },
-    {
-      id: 6,
-      capacity: 20,
-      balls: [
-        { id: 1, weight: 7, reward: 28, color: "bg-zinc-500" },
-        { id: 2, weight: 4, reward: 20, color: "bg-red-600" },
-        { id: 3, weight: 5, reward: 25, color: "bg-blue-600" },
-        { id: 4, weight: 3, reward: 18, color: "bg-green-600" }
-      ],
-      solution: [1, 2, 3, 4],
-      explanation: "Select all items 1, 2, 3, and 4 for total weight 19 and reward 91, staying within capacity 20.",
-      difficulty: "hard"
-    }
-  ];
-  
-  return practiceQuestions.filter(q => q.balls.length === NUM_BALLS);
+  const questions = loadQuestionsForPhase('training');
+
+  // We want EXACTLY 6 total questions: 2 Easy, 2 Medium, 2 Hard
+  // We'll shuffle each difficulty bucket separately and take 2 from each
+  const practiceEasy = shuffle(questions.easy).slice(0, 2);
+  const practiceMedium = shuffle(questions.medium).slice(0, 2);
+
+  const practiceHard = shuffle(questions.hard).slice(0, 2);
+
+  return shuffle([
+    ...practiceEasy,
+    ...practiceMedium,
+    ...practiceHard
+  ]);
 }
 
 /**
@@ -207,12 +169,12 @@ export function getPracticeQuestions(): Question[] {
  */
 export function getSkillTestQuestions(): Question[] {
   const questions = loadQuestionsForPhase('training');
-  
+
   // Shuffle within each difficulty group, but keep groups separate
   const shuffledEasy = shuffle(questions.easy);
   const shuffledMedium = shuffle(questions.medium);
   const shuffledHard = shuffle(questions.hard);
-  
+
   // Return in order: all easy, then all medium, then all hard
   return [
     ...shuffledEasy.slice(0, 3),
@@ -225,42 +187,29 @@ export function getSkillTestQuestions(): Question[] {
  * Get questions for Benchmark Test (Test 2): 10 easy + 10 medium + 10 hard = 30 total
  * Questions are RANDOMIZED (not grouped)
  */
-export function getBenchmarkPhaseQuestions(): Question[] {
-  const questions = loadQuestionsForPhase('benchmark');
-  
-  const shuffledEasy = shuffle(questions.easy);
-  const shuffledMedium = shuffle(questions.medium);
-  const shuffledHard = shuffle(questions.hard);
-  
-  return randomizeQuestionOrder(
-    shuffledEasy,
-    shuffledMedium,
-    shuffledHard,
-    10,
-    10,
-    10
+/**
+ * Get questions for Benchmark Test (Test 2): 30 random questions
+ * Uniformly sampled from ALL available benchmark questions (approx 300)
+ */
+export function getBenchmarkPhaseQuestions(participantId?: string | null): Question[] {
+  const allQuestions = (staticQuestions.questions as Question[]).filter(
+    (q) => q.phase === 'benchmark' && q.balls.length === NUM_BALLS
   );
+  // Seed with participantId so a refresh returns the SAME 30 questions —
+  // otherwise already-confirmed answer keys wouldn't match the new shuffle.
+  const seed = seedFor(participantId, 'benchmark');
+  return shuffle(allQuestions, seed).slice(0, 30);
 }
 
 /**
- * Get questions for Final Test (Test 3): 10 easy + 10 medium + 10 hard = 30 total
- * Questions are RANDOMIZED (not grouped)
+ * Get questions for Final Test (Test 3): 30 deterministic-per-participant questions
  */
-export function getPredictionPhaseQuestions(): Question[] {
-  const questions = loadQuestionsForPhase('prediction');
-  
-  const shuffledEasy = shuffle(questions.easy);
-  const shuffledMedium = shuffle(questions.medium);
-  const shuffledHard = shuffle(questions.hard);
-  
-  return randomizeQuestionOrder(
-    shuffledEasy,
-    shuffledMedium,
-    shuffledHard,
-    10,
-    10,
-    10
+export function getPredictionPhaseQuestions(participantId?: string | null): Question[] {
+  const allQuestions = (staticQuestions.questions as Question[]).filter(
+    (q) => q.phase === 'prediction' && q.balls.length === NUM_BALLS
   );
+  const seed = seedFor(participantId, 'prediction');
+  return shuffle(allQuestions, seed).slice(0, 30);
 }
 
 /**

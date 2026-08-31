@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Package, Coins, Weight, CheckCircle, Zap, Star, Target, ShoppingBag } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
+import { timeTracker } from "@/lib/time-tracker"
 
 interface Ball {
   id: number
@@ -33,6 +34,9 @@ interface KnapsackQuestionProps {
   onTimeUp?: () => void
   initialSelection?: number[]
   isConfirmed?: boolean
+  // Fires on every toggle (pre-confirm). Parent uses this to keep the draft
+  // selection alive across question navigations.
+  onSelectionChange?: (selectedBalls: number[]) => void
 }
 
 export default function KnapsackQuestion({
@@ -41,6 +45,7 @@ export default function KnapsackQuestion({
   onSkip,
   showSolution = false,
   isInteractive = true,
+  onSelectionChange,
   isTestMode = false,
   timeLimit,
   onTimeUp,
@@ -91,10 +96,20 @@ export default function KnapsackQuestion({
       return
     }
 
-    console.log("Toggling ball:", ballId)
     setSelectedBalls((prev) => {
-      const newSelection = prev.includes(ballId) ? prev.filter((id) => id !== ballId) : [...prev, ballId]
-      console.log("New selection:", newSelection)
+      const wasSelected = prev.includes(ballId)
+      const newSelection = wasSelected ? prev.filter((id) => id !== ballId) : [...prev, ballId]
+      // Record the click for later analysis (final selection ≠ click history).
+      // Buffered in-memory; phase-end handler ships it via ingest-phase to avoid per-click HTTP.
+      timeTracker.logInteraction('ball_toggle', {
+        questionId: question.id,
+        ballId,
+        action: wasSelected ? 'deselect' : 'select',
+        selectionAfter: newSelection,
+        clickIndex: prev.length,
+      })
+      // Bubble draft selection up so parent can persist it across navigations.
+      onSelectionChange?.(newSelection)
       return newSelection
     })
   }
@@ -231,7 +246,7 @@ export default function KnapsackQuestion({
                 <Coins className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-xs font-medium opacity-80">Total Reward</div>
+                <div className="text-xs font-medium opacity-80">Total Points</div>
                 <div className="text-2xl font-bold">{currentTotals.reward}</div>
               </div>
             </div>
@@ -309,7 +324,7 @@ export default function KnapsackQuestion({
                     <div className="text-center">
                       <div className="flex items-center justify-center space-x-2 mb-1">
                         <Coins className="h-5 w-5 text-amber-600" />
-                        <span className="text-sm font-medium text-amber-600">Reward</span>
+                        <span className="text-sm font-medium text-amber-600">Points</span>
                       </div>
                       <div className="text-2xl font-bold text-amber-600">
                         {ball.reward}
@@ -355,18 +370,19 @@ export default function KnapsackQuestion({
           >
             <Button
               onClick={handleSubmit}
-              disabled={selectedBalls.length === 0}
+              disabled={selectedBalls.length === 0 || isOverCapacity}
               size="lg"
+              title={isOverCapacity ? "Your selection exceeds the knapsack capacity. Remove items to confirm." : undefined}
               className={`
                 px-8 py-3 rounded-xl font-semibold shadow-lg transition-all duration-200
-                ${!isTestMode && isOverCapacity 
-                  ? "bg-red-500 hover:bg-red-600" 
+                ${isOverCapacity
+                  ? "bg-red-500 hover:bg-red-600"
                   : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                 }
                 disabled:opacity-50 disabled:cursor-not-allowed
               `}
             >
-              {!isTestMode && isOverCapacity ? "Confirm Answer (Over Capacity)" : "Confirm Answer"}
+              {isOverCapacity ? "Over capacity — remove items to confirm" : "Confirm Answer"}
             </Button>
             
             {onSkip && (
@@ -417,7 +433,7 @@ export default function KnapsackQuestion({
                 <div className="text-lg font-bold text-green-800">{solutionTotals.weight}/{question.capacity}</div>
               </div>
               <div className="bg-white rounded-xl p-3 text-center">
-                <div className="text-sm text-green-600 font-medium">Total Reward</div>
+                <div className="text-sm text-green-600 font-medium">Total Points</div>
                 <div className="text-lg font-bold text-green-800">{solutionTotals.reward}</div>
               </div>
             </div>

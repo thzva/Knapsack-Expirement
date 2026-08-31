@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useTimeTracker } from "@/lib/time-tracker"
+import { uploadPhase } from "@/lib/phase-uploader"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,11 +17,12 @@ interface PredictionPhaseProps {
   onNext: () => void
   participantData: any
   updateParticipantData: (data: any) => void
+  participantId: string | null
 }
 
 // Questions will be loaded dynamically from the backend/generator
 
-export default function PredictionPhase({ onNext, updateParticipantData }: PredictionPhaseProps) {
+export default function PredictionPhase({ onNext, updateParticipantData, participantId }: PredictionPhaseProps) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState<{
@@ -28,24 +30,24 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
   }>({})
   const [starredQuestions, setStarredQuestions] = useState<Set<number>>(new Set())
   const [showInstructions, setShowInstructions] = useState(true)
-  const [timeLeft, setTimeLeft] = useState(20 * 60) // 20 minutes
+  const [timeLeft, setTimeLeft] = useState(10 * 60) // 10 minutes
   const [isComplete, setIsComplete] = useState(false)
   const [showFinishWarning, setShowFinishWarning] = useState(false)
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(true)
   const [questionLoadError, setQuestionLoadError] = useState<string | null>(null)
-  const [participantId, setParticipantId] = useState<string | null>(null)
+
   const timeTracker = useTimeTracker()
-  const [questionTimes, setQuestionTimes] = useState<{[key: number]: {startTime: number, endTime?: number, timeSpent?: number}}>({})
+  const [questionTimes, setQuestionTimes] = useState<{ [key: number]: { startTime: number, endTime?: number, timeSpent?: number } }>({})
   const [currentQuestionStartTime, setCurrentQuestionStartTime] = useState<number | null>(null)
 
-  // API base (configure in .env.local as NEXT_PUBLIC_API_BASE=http://localhost:8787)
-  const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE || "https://knapsack-expirement-03kg.onrender.com", [])
+  // API base - uses local CoLab backend
+  const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE || (window.location.origin + '/colab/api/knapsack-exp'), [])
 
   // Start section timing when phase begins
   useEffect(() => {
     if (!showInstructions && questions.length > 0) {
       timeTracker.startSection('final')
-      
+
       // Start timing for first question
       const questionId = questions[currentQuestion]?.id
       if (questionId) {
@@ -62,7 +64,7 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
         timeTracker.startQuestion(questionId, 'final')
       }
     }
-    
+
     return () => {
       timeTracker.endSection()
     }
@@ -89,7 +91,7 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
             }))
           }
         }
-        
+
         // Start timing for current question
         const startTime = Date.now()
         setCurrentQuestionStartTime(startTime)
@@ -101,20 +103,13 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
             timeSpent: undefined
           }
         }))
-        
+
         timeTracker.startQuestion(questionId, 'final')
       }
     }
   }, [currentQuestion, showInstructions, questions, isComplete, timeTracker])
 
-  // Load participant ID
-  useEffect(() => {
-    const stored = localStorage.getItem("participantId")
-    setParticipantId(stored)
-    if (!stored) {
-      console.warn("[Final Test] No participantId in localStorage")
-    }
-  }, [])
+
 
   // Load questions from static JSON
   useEffect(() => {
@@ -124,10 +119,10 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
       try {
         setIsLoadingQuestions(true)
         setQuestionLoadError(null)
-        
-        const generatedQuestions = getPredictionPhaseQuestions()
+
+        const generatedQuestions = getPredictionPhaseQuestions(participantId)
         setQuestions(generatedQuestions)
-        
+
       } catch (error) {
         console.error("[Final Test] Failed to load questions:", error)
         setQuestionLoadError(error instanceof Error ? error.message : 'Failed to load questions')
@@ -139,28 +134,28 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
     loadQuestions()
   }, [participantId])
 
-  // 20-minute countdown timer
+  // Countdown timer — display + decrement only.
   useEffect(() => {
     if (!showInstructions && timeLeft > 0 && !isComplete) {
       const timer = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            completeTest()
-            return 0
-          }
-          return prev - 1
-        })
+        setTimeLeft((prev) => Math.max(0, prev - 1))
       }, 1000)
-
       return () => clearInterval(timer)
     }
   }, [showInstructions, timeLeft, isComplete])
+
+  // Finalize once the timer hits 0 — separated from the setState updater above.
+  useEffect(() => {
+    if (!showInstructions && timeLeft === 0 && !isComplete) {
+      completeTest()
+    }
+  }, [timeLeft, showInstructions, isComplete])
 
   const handleAnswer = (selectedBalls: number[], isCorrect: boolean) => {
     const questionId = questions[currentQuestion].id
     const endTime = Date.now()
     const timeSpent = currentQuestionStartTime ? endTime - currentQuestionStartTime : 0
-    
+
     // Log interaction
     timeTracker.logInteraction('answer_confirmed', {
       questionId,
@@ -169,7 +164,7 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
       timeSpent,
       timestamp: new Date().toISOString()
     })
-    
+
     setAnswers((prev) => ({
       ...prev,
       [questionId]: {
@@ -183,16 +178,16 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
 
   const completeTest = async () => {
     setIsComplete(true)
-  
+
     const correctAnswers = Object.values(answers).filter((a) => a.confirmed && a.correct).length
     const incorrectAnswers = Object.values(answers).filter((a) => a.confirmed && !a.correct).length
     const confirmedAnswers = Object.values(answers).filter((a) => a.confirmed).length
     const unansweredQuestions = questions.length - confirmedAnswers
-    
+
     // Calculate points: 2 points per correct, 1 point per unanswered, 0 per incorrect
     const totalPoints = (correctAnswers * 2) + (unansweredQuestions * 1) + (incorrectAnswers * 0)
     const maxPoints = questions.length * 2 // 30 questions × 2 = 60 max points
-  
+
     const payload = {
       participantId,
       phase: "final",
@@ -204,43 +199,43 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
         totalPoints,
         maxPoints,
         totalQuestions: questions.length,
-        timeUsed: 20 * 60 - timeLeft,
+        accuracy: correctAnswers / questions.length,
+        timeUsed: 10 * 60 - timeLeft,
         answers: Object.entries(answers).map(([questionId, value]) => ({
           questionId: Number(questionId),
           selected: value.selected,
           confirmed: value.confirmed,
           correct: value.correct,
-          timeSpent: value.timeSpent || questionTimes[Number(questionId)]?.timeSpent || 0
+          timeSpent: value.timeSpent || questionTimes[Number(questionId)]?.timeSpent || 0,
+          difficulty: questions.find(q => q.id === Number(questionId))?.difficulty || 'unknown'
         })),
         questionTimes: Object.entries(questionTimes).map(([questionId, timing]) => ({
           questionId: Number(questionId),
           startTime: timing.startTime,
           endTime: timing.endTime,
-          timeSpent: timing.timeSpent || 0
-        }))
+          timeSpent: timing.timeSpent || 0,
+          difficulty: questions.find(q => q.id === Number(questionId))?.difficulty || 'unknown'
+        })),
+        interactions: timeTracker.getAllInteractions()
       },
     }
-  
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/ingest-phase`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
-  
-      if (!res.ok) throw new Error("Failed to submit final test")
-  
-      console.log("[Final Test] Submission successful ✅")
-      updateParticipantData({ final: payload.data })
-      onNext()
-    } catch (err) {
-      console.error("[Final Test] Submission failed ❌", err)
-      alert("There was an error submitting your final test responses.")
+
+    // Hand off to the shared uploader: stages payload to localStorage first,
+    // retries 4× with exponential backoff. Even if every attempt fails, the
+    // payload remains in localStorage and results-phase will replay it before
+    // finalizing — so the user is never silently stuck at 0/60.
+    const result = await uploadPhase(payload as any)
+    if (result.success) {
+      console.log("[Final Test] Submission successful ✅", result)
+    } else {
+      console.warn("[Final Test] Upload failed — stashed for replay", result)
     }
+    // Always advance: local state has the real score; pending uploads (if any)
+    // will be replayed at the results screen before /complete-participant fires.
+    updateParticipantData({ final: payload.data })
+    onNext()
   }
-  
+
 
   const toggleStar = (questionIndex: number) => {
     setStarredQuestions((prev) => {
@@ -269,7 +264,7 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
         }
       }))
     }
-    
+
     // Log navigation interaction
     timeTracker.logInteraction('question_navigation', {
       fromQuestion: currentQuestion,
@@ -277,7 +272,7 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
       timeSpent: currentQuestionStartTime ? Date.now() - currentQuestionStartTime : 0,
       timestamp: new Date().toISOString()
     })
-    
+
     setCurrentQuestion(index)
   }
 
@@ -339,10 +334,9 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
               <h3 className="text-2xl font-semibold text-red-800 mb-6">Final Test</h3>
 
               <div className="space-y-6 text-red-700">
-                <p className="text-lg">
-                  Welcome to the final test! You will see <strong>{questions.length} dynamically generated knapsack questions</strong> with 
-                  descending difficulty order. As usual, we do NOT expect you 
-                  to finish every question in the time given, so plan your time accordingly.
+                <p className="text-xl">
+                  You will complete a final test with <strong>{questions.length} dynamically generated knapsack questions</strong>. You
+                  have exactly <strong>15 minutes</strong> to complete the test.
                 </p>
 
                 {questionLoadError && (
@@ -353,22 +347,29 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
                   </div>
                 )}
 
-                <div className="bg-white p-6 rounded-lg border-2 border-red-200">
-                                <h4 className="text-lg font-semibold mb-4 flex items-center">
-                <Clock className="h-5 w-5 mr-2" />
-                Assessment
-              </h4>
-              <ul className="text-base space-y-2">
-                <li>• <strong>Correct answers</strong>: Contribute to your performance assessment</li>
-                <li>• <strong>Incorrect answers</strong>: Do not contribute to your assessment</li>
-                <li>• <strong>Unanswered questions</strong>: Considered neutral</li>
-                <li>• Must confirm answers to count</li>
-              </ul>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="bg-white p-6 rounded-lg text-gray-800">
+                    <h4 className="text-xl font-semibold mb-4">🧭 Navigation</h4>
+                    <ul className="text-lg space-y-3">
+                      <li>• <strong>You can navigate to any question in the test at any point</strong> by clicking the question menu on the left, or by clicking the arrow buttons on every question.</li>
+                      <li>• You can "highlight" questions by clicking the star icon on the menu.</li>
+                      <li>• As before, <strong>please remember to confirm questions you wish to answer</strong>. You cannot change your answer after confirming, but you can still view them by moving to the question.</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-lg text-gray-800">
+                    <h4 className="text-xl font-semibold mb-4">🎯 Scoring</h4>
+                    <ul className="text-lg space-y-3">
+                      <li>• <strong>Correct answers</strong>: 2 points</li>
+                      <li>• <strong>Incorrect answers</strong>: 0 points</li>
+                      <li>• <strong>Unanswered questions</strong>: 1 point</li>
+                    </ul>
+                  </div>
                 </div>
 
                 <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-6">
-                  <p className="text-lg text-yellow-800 font-medium">
-                    💡 <strong>Strategy Note:</strong> The test is long, and you are NOT expected to finish every question. Plan your time
+                  <p className="text-xl text-yellow-800 font-medium">
+                    💡 <strong>Strategy Tip:</strong> The test is long, and you are NOT expected to finish every question. Plan your time
                     accordingly and focus on questions you can solve accurately.
                   </p>
                 </div>
@@ -376,9 +377,9 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
             </div>
 
             <div className="text-center">
-              <Button 
-                onClick={startPhase} 
-                size="lg" 
+              <Button
+                onClick={startPhase}
+                size="lg"
                 className="bg-red-600 hover:bg-red-700"
                 disabled={questions.length === 0}
               >
@@ -397,7 +398,7 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
     const confirmedAnswers = Object.values(answers).filter((a) => a.confirmed).length
     const unansweredQuestions = questions.length - confirmedAnswers
     const incorrectAnswers = Object.values(answers).filter((a) => a.confirmed && !a.correct).length
-    
+
     // Calculate points: 2 points per correct, 1 point per unanswered, 0 per incorrect
     const totalPoints = (correctAnswers * 2) + (unansweredQuestions * 1) + (incorrectAnswers * 0)
     const maxPoints = questions.length * 2 // 60 max points
@@ -415,42 +416,8 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
           <CardContent className="space-y-6">
             <div className="text-center">
               <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-8 rounded-xl">
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">Your Final Performance</h3>
-
-                <div className="grid md:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <div className="text-3xl font-bold text-emerald-600">{correctAnswers}</div>
-                    <div className="text-sm text-gray-600">Correct</div>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <div className="text-3xl font-bold text-amber-600">{unansweredQuestions}</div>
-                    <div className="text-sm text-gray-600">Unanswered</div>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <div className="text-3xl font-bold text-rose-600">{incorrectAnswers}</div>
-                    <div className="text-sm text-gray-600">Incorrect</div>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-lg shadow-sm border-2 border-teal-500">
-                    <div className="text-3xl font-bold text-teal-600">{totalPoints}/{maxPoints}</div>
-                    <div className="text-sm text-gray-600">Points Earned</div>
-                  </div>
-                </div>
-
-                <div className="bg-teal-100 border border-teal-300 rounded-lg p-4 mb-6">
-                  <p className="text-teal-800 font-medium">
-                    You completed the test with <strong>{totalPoints} out of {maxPoints}</strong> points!
-                  </p>
-                  <p className="text-teal-700 text-sm mt-2">
-                    Scoring: 2 points per correct answer, 1 point per unanswered question, 0 points per incorrect answer.
-                  </p>
-                  <p className="text-teal-700 text-sm mt-1">
-                    Thank you for participating in this study.
-                  </p>
-                </div>
-
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Thank you for completing the final test!</h3>
+                <p className="text-lg text-gray-600 mb-6">Click below to continue.</p>
                 <Button onClick={onNext} size="lg">
                   Continue to Question Analysis
                 </Button>
@@ -488,9 +455,8 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
               <h2 className="text-2xl font-bold text-gray-900">Final Test</h2>
-              <div className={`px-4 py-3 rounded-xl text-xl font-mono font-bold shadow-lg flex items-center space-x-2 ${
-                timeLeft <= 300 ? "bg-red-500 text-white animate-pulse" : timeLeft <= 600 ? "bg-orange-500 text-white" : "bg-blue-500 text-white"
-              }`}>
+              <div className={`px-4 py-3 rounded-xl text-xl font-mono font-bold shadow-lg flex items-center space-x-2 ${timeLeft <= 300 ? "bg-red-500 text-white animate-pulse" : timeLeft <= 600 ? "bg-orange-500 text-white" : "bg-blue-500 text-white"
+                }`}>
                 <Clock className="h-5 w-5" />
                 <span>{formatTime(timeLeft)}</span>
               </div>
@@ -519,40 +485,38 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
         </CardHeader>
 
         <CardContent className="p-4">
-          {/* Horizontal Scrollable Question Numbers */}
+          {/* Question Numbers in 2 rows (15 questions each) */}
           <div className="relative">
-            <div className="flex space-x-3 overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(15, minmax(0, 1fr))' }}>
               {questions.map((q, index) => {
                 const isActive = index === currentQuestion
                 const isAnswered = answers[q.id]?.confirmed
                 const isStarred = starredQuestions.has(index)
 
                 return (
-                  <div key={q.id} className="relative flex-shrink-0">
+                  <div key={q.id} className="relative">
                     <button
                       onClick={() => navigateToQuestion(index)}
                       className={`
                         relative w-14 h-14 flex items-center justify-center font-bold text-lg rounded-xl transition-all duration-200 border-2
-                        ${
-                          isActive
-                            ? "bg-blue-500 text-white shadow-lg scale-110 border-blue-600"
-                            : isAnswered
-                              ? "bg-green-100 text-green-800 hover:bg-green-200 border-green-300"
-                              : "bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-300"
+                        ${isActive
+                          ? "bg-blue-500 text-white shadow-lg scale-110 border-blue-600"
+                          : isAnswered
+                            ? "bg-green-100 text-green-800 hover:bg-green-200 border-green-300"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-300"
                         }
                       `}
                     >
                       {index + 1}
                     </button>
-                    
+
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         toggleStar(index)
                       }}
-                      className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center ${
-                        isStarred ? "bg-yellow-500 text-white" : "bg-gray-200 text-gray-400 hover:bg-gray-300"
-                      }`}
+                      className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center ${isStarred ? "bg-yellow-500 text-white" : "bg-gray-200 text-gray-400 hover:bg-gray-300"
+                        }`}
                     >
                       <Star className="h-3 w-3" fill={isStarred ? "currentColor" : "none"} />
                     </button>
@@ -591,7 +555,7 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
 
       {/* Main Question Area */}
       <div className="space-y-6">
-          <Card>
+        <Card>
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
@@ -621,6 +585,18 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
               isTestMode={true}
               initialSelection={currentAnswer?.selected || []}
               isConfirmed={currentAnswer?.confirmed || false}
+              onSelectionChange={(sel) => {
+                if (currentAnswer?.confirmed) return
+                setAnswers(prev => ({
+                  ...prev,
+                  [question.id]: {
+                    ...(prev[question.id] || {}),
+                    selected: sel,
+                    confirmed: false,
+                    correct: false,
+                  }
+                }))
+              }}
             />
 
             {currentAnswer?.confirmed && (
@@ -678,14 +654,14 @@ export default function PredictionPhase({ onNext, updateParticipantData }: Predi
                 </p>
               </div>
               <div className="flex space-x-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setShowFinishWarning(false)}
                   className="flex-1"
                 >
                   Continue Test
                 </Button>
-                <Button 
+                <Button
                   onClick={() => {
                     setShowFinishWarning(false)
                     completeTest()

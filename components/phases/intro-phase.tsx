@@ -34,9 +34,14 @@ export default function IntroPhase({ onNext }: IntroPhaseProps) {
 
             <CardContent className="space-y-6">
               <div className="bg-white rounded-lg p-8 shadow-sm">
-                <p className="text-lg text-gray-700 mb-6">
-                  Thank you for participating in our experiment. In the experiment, you will be asked to complete a series of questions for chances to win a prize! You may click next to begin the experiment.
-                </p>
+                <div className="text-lg text-gray-700 mb-6 space-y-4">
+                  <p className="font-semibold">In this experiment you can earn prizes (max dollar amount) by:</p>
+                  <ol className="list-decimal list-inside space-y-2 ml-4">
+                    <li>Doing a number of short quizzes containing optimization problems called <strong>Knapsack Problems</strong>.</li>
+                    <li>More correct answers means higher prize.</li>
+                  </ol>
+                  <p className="mt-4">You may click the button below to begin the experiment!</p>
+                </div>
 
                 <Button
                   onClick={() => setShowSecondDisplay(true)}
