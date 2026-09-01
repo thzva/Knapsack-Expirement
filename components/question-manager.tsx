@@ -631,21 +631,64 @@ function QuestionEditor({
   const [difficulty, setDifficulty] = useState<Difficulty>(
     (current.difficulty as Difficulty) ?? "easy",
   )
+  // Answer key override: null = follow the computed optimum; an array = the
+  // manually chosen answer key.
+  const [manualSolution, setManualSolution] = useState<number[] | null>(() => {
+    const auto = analyzeQuestion(current.balls, current.capacity).solution
+    const stored = current.solution ?? []
+    const same = stored.length === auto.length && stored.every((id) => auto.includes(id))
+    return same ? null : [...stored]
+  })
   const [showSolution, setShowSolution] = useState(false)
   const [previewKey, setPreviewKey] = useState(0)
   const [savedFlash, setSavedFlash] = useState(false)
 
   const analysis = useMemo(() => analyzeQuestion(balls, capacity), [balls, capacity])
-  // The difficulty selector always wins over the auto-classification.
-  const draft = useMemo(
-    () => ({ ...rebuildQuestion(current, balls, capacity), difficulty }),
-    [current, balls, capacity, difficulty],
-  )
 
+  const effectiveSolution = manualSolution ?? analysis.solution
+  const keyTotals = useMemo(() => {
+    return balls.reduce(
+      (acc, b) => {
+        if (effectiveSolution.includes(b.id)) {
+          acc.weight += b.weight
+          acc.reward += b.reward
+        }
+        return acc
+      },
+      { weight: 0, reward: 0 },
+    )
+  }, [balls, effectiveSolution])
+  const keyOverCapacity = keyTotals.weight > capacity
+
+  const toggleSolutionItem = (id: number) => {
+    const chosen = new Set(effectiveSolution)
+    if (chosen.has(id)) chosen.delete(id)
+    else chosen.add(id)
+    const next = balls.map((b) => b.id).filter((bid) => chosen.has(bid))
+    const auto = analysis.solution
+    const same = next.length === auto.length && next.every((x) => auto.includes(x))
+    setManualSolution(same ? null : next)
+  }
+
+  // The difficulty selector and manual answer key win over the auto-computed values.
+  const draft = useMemo(() => {
+    const base = { ...rebuildQuestion(current, balls, capacity), difficulty }
+    if (manualSolution) {
+      return {
+        ...base,
+        solution: [...manualSolution],
+        explanation: `The target selection earns ${keyTotals.reward} points while staying within capacity (${keyTotals.weight}/${capacity}).`,
+      }
+    }
+    return base
+  }, [current, balls, capacity, difficulty, manualSolution, keyTotals])
+
+  const sortedIds = (ids?: number[]) => [...(ids ?? [])].sort((a, b) => a - b).join(",")
   const dirty =
     capacity !== current.capacity ||
     difficulty !== current.difficulty ||
-    JSON.stringify(balls) !== JSON.stringify(current.balls)
+    JSON.stringify(balls) !== JSON.stringify(current.balls) ||
+    sortedIds(draft.solution) !== sortedIds(current.solution)
 
   const setBallField = (id: number, field: "weight" | "reward", value: number) => {
     setBalls((prev) =>
@@ -664,6 +707,10 @@ function QuestionEditor({
     setCapacity(original.capacity)
     setBalls(original.balls.map((b) => ({ ...b })))
     setDifficulty((original.difficulty as Difficulty) ?? "easy")
+    const auto = analyzeQuestion(original.balls, original.capacity).solution
+    const stored = original.solution ?? []
+    const same = stored.length === auto.length && stored.every((id) => auto.includes(id))
+    setManualSolution(same ? null : [...stored])
     setPreviewKey((k) => k + 1)
   }
 
@@ -778,21 +825,45 @@ function QuestionEditor({
                           {(ball.reward / ball.weight).toFixed(2)}
                         </td>
                         <td className="py-2">
-                          {analysis.solution.includes(ball.id) ? (
-                            <Badge className="bg-emerald-600 text-white">yes</Badge>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
+                          <input
+                            type="checkbox"
+                            checked={effectiveSolution.includes(ball.id)}
+                            onChange={() => toggleSolutionItem(ball.id)}
+                            className="h-4 w-4 accent-emerald-600 cursor-pointer align-middle"
+                            title="Tick the items that form the answer key"
+                          />
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
 
+                {manualSolution && !keyOverCapacity && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+                    Custom answer key: {keyTotals.reward} pts · {keyTotals.weight}/{capacity}
+                    {keyTotals.reward !== analysis.maxReward && (
+                      <> — the true optimum is {analysis.maxReward} pts, so a participant who finds
+                      it would be scored incorrect.</>
+                    )}{" "}
+                    <button
+                      className="text-blue-700 hover:underline"
+                      onClick={() => setManualSolution(null)}
+                    >
+                      Use computed optimal
+                    </button>
+                  </p>
+                )}
+                {keyOverCapacity && (
+                  <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mt-4">
+                    The answer key weighs {keyTotals.weight}, which exceeds the capacity ({capacity}).
+                    Untick items or raise the capacity before saving.
+                  </p>
+                )}
+
                 <div className="flex items-center gap-2 mt-5">
                   <Button
                     onClick={handleSave}
-                    disabled={!dirty}
+                    disabled={!dirty || keyOverCapacity}
                     className="bg-blue-700 hover:bg-blue-800"
                   >
                     {savedFlash ? "Saved ✓" : "Save Changes"}
