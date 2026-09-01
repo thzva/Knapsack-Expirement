@@ -286,7 +286,7 @@ export default function MetaAnalysisPhase({ onNext, updateParticipantData }: Met
 
           <CardContent className="space-y-6">
             <div className="text-center">
-              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-8 rounded-xl">
+              <div className="bg-gray-50 p-8 rounded-xl">
                 <h3 className="text-2xl font-bold text-gray-900 mb-6">Classification Results</h3>
 
                 <div className="grid md:grid-cols-3 gap-4 mb-6">

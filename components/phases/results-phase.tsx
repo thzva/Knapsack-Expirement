@@ -121,9 +121,9 @@ export default function ResultsPhase({ onNext, participantData }: ResultsPhasePr
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       {/* Header */}
-      <Card className="text-center shadow-lg bg-gradient-to-br from-purple-50 to-blue-50">
+      <Card className="text-center shadow-lg bg-gray-50">
         <CardHeader>
-          <div className="mx-auto w-20 h-20 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center mb-4">
+          <div className="mx-auto w-20 h-20 bg-blue-700 rounded-full flex items-center justify-center mb-4">
             <Trophy className="h-10 w-10 text-white" />
           </div>
           <CardTitle className="text-3xl font-bold text-gray-900">Experiment Complete</CardTitle>
@@ -188,7 +188,7 @@ export default function ResultsPhase({ onNext, participantData }: ResultsPhasePr
             </div>
           </div>
 
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-lg text-center">
+          <div className="bg-blue-700 rounded-2xl p-8 text-white shadow-lg text-center">
             <h3 className="text-xl font-medium text-blue-100 mb-2">Total Points Earned</h3>
             <div className="text-6xl font-black tabular-nums tracking-tight">
               {totalEarnedPoints} <span className="text-3xl text-blue-200 font-medium">/ {totalPossiblePoints}</span>
@@ -240,7 +240,7 @@ export default function ResultsPhase({ onNext, participantData }: ResultsPhasePr
               onClick={completeProlificStudy}
               disabled={isCompleting || pendingReplay.status === 'replaying' || pendingReplay.status === 'still-failing'}
               size="lg"
-              className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-8 py-5 rounded-2xl font-bold shadow-xl text-xl w-full max-w-lg transform hover:scale-[1.02] transition-all disabled:opacity-50"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-5 rounded-2xl font-bold shadow-xl text-xl w-full max-w-lg transform hover:scale-[1.02] transition-all disabled:opacity-50"
             >
               {isCompleting ? "Saving results..."
                 : pendingReplay.status === 'replaying' ? "Uploading pending data…"

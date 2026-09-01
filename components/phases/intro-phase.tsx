@@ -24,9 +24,9 @@ export default function IntroPhase({ onNext }: IntroPhaseProps) {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.5 }}
         >
-          <Card className="text-center shadow-lg border-0 bg-gradient-to-br from-blue-50 to-indigo-50">
+          <Card className="text-center shadow-lg border-0 bg-blue-50">
             <CardHeader className="pb-4">
-              <div className="mx-auto w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mb-4">
+              <div className="mx-auto w-20 h-20 bg-blue-700 rounded-full flex items-center justify-center mb-4">
                 <Gift className="h-10 w-10 text-white" />
               </div>
               <CardTitle className="text-3xl font-bold text-gray-900 mb-2">Welcome to Our Experiment</CardTitle>
@@ -46,7 +46,7 @@ export default function IntroPhase({ onNext }: IntroPhaseProps) {
                 <Button
                   onClick={() => setShowSecondDisplay(true)}
                   size="lg"
-                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3 text-lg"
+                  className="bg-blue-700 text-white px-8 py-3 text-lg"
                 >
                   Next
                   <ArrowRight className="ml-2 h-5 w-5" />
@@ -67,9 +67,9 @@ export default function IntroPhase({ onNext }: IntroPhaseProps) {
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.5 }}
       >
-        <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-50 to-indigo-50">
+        <Card className="shadow-lg border-0 bg-blue-50">
           <CardHeader className="pb-4">
-            <div className="mx-auto w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mb-4">
+            <div className="mx-auto w-20 h-20 bg-blue-700 rounded-full flex items-center justify-center mb-4">
               <Trophy className="h-10 w-10 text-white" />
             </div>
             <CardTitle className="text-3xl font-bold text-gray-900 mb-2">The Knapsack Challenge</CardTitle>
@@ -84,7 +84,7 @@ export default function IntroPhase({ onNext }: IntroPhaseProps) {
               <Button
                 onClick={onNext}
                 size="lg"
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3 text-lg"
+                className="bg-blue-700 text-white px-8 py-3 text-lg"
               >
                 Continue to Instructions
                 <ArrowRight className="ml-2 h-5 w-5" />

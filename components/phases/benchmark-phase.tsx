@@ -294,7 +294,7 @@ export default function BenchmarkPhase({ onNext, updateParticipantData, particip
         <Card className="shadow-lg">
           <CardContent className="p-8 text-center">
             <div className="space-y-4">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl mb-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-700 rounded-2xl mb-4">
                 <Zap className="h-8 w-8 text-white animate-pulse" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900">Generating Test 2 Questions</h2>
@@ -431,7 +431,7 @@ export default function BenchmarkPhase({ onNext, updateParticipantData, particip
   return (
     <div className="max-w-7xl mx-auto">
       {/* Top Section with Timer and Finish Button */}
-      <Card className="mb-6 bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200">
+      <Card className="mb-6 bg-gray-50 border-2 border-purple-200">
         <CardContent className="p-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">

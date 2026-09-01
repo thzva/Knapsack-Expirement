@@ -201,7 +201,7 @@ export default function KnapsackExperiment() {
   // Show loading state while checking access
   if (isCheckingAccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="max-w-md mx-auto p-8">
           <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -220,7 +220,7 @@ export default function KnapsackExperiment() {
   // Show completed message if participant already finished
   if (showCompletedMessage) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="max-w-2xl mx-auto p-8">
           <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -249,7 +249,7 @@ export default function KnapsackExperiment() {
   // Access restriction check
   if (!accessAllowed) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="max-w-2xl mx-auto p-8">
           <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -271,14 +271,14 @@ export default function KnapsackExperiment() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-xl shadow-lg border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                <div className="w-12 h-12 bg-blue-700 rounded-lg flex items-center justify-center">
                   <Trophy className="h-7 w-7 text-white" />
                 </div>
                 <div>
@@ -305,7 +305,7 @@ export default function KnapsackExperiment() {
       </header>
 
       {/* Progress Section */}
-      <div className="bg-white/60 backdrop-blur-xl border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between mb-3">
             <span className="text-lg font-semibold text-gray-900">{phases[currentPhaseIndex]?.name}</span>
@@ -327,18 +327,20 @@ export default function KnapsackExperiment() {
               return (
                 <motion.div
                   key={phase.id}
-                  className="flex flex-col items-center"
+                  className="flex flex-col items-center cursor-pointer"
                   whileHover={{ scale: 1.05 }}
                   transition={{ duration: 0.2 }}
+                  onClick={() => setCurrentPhase(phase.id)}
+                  title={`Jump to ${phase.name}`}
                 >
                   <div
                     className={`
-                    w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg transition-all duration-300
+                    w-12 h-12 rounded-xl flex items-center justify-center text-white shadow transition-all duration-300
                     ${isActive
-                        ? "bg-gradient-to-br from-blue-500 to-purple-600 ring-4 ring-blue-200"
+                        ? "bg-blue-700 ring-4 ring-blue-200"
                         : isCompleted
-                          ? "bg-gradient-to-br from-green-500 to-emerald-600"
-                          : "bg-gray-300"
+                          ? "bg-emerald-600"
+                          : "bg-gray-300 hover:bg-gray-400"
                       }
                   `}
                   >

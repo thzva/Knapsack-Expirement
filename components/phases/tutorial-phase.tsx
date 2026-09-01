@@ -313,7 +313,7 @@ export default function TutorialPhase({ onNext }: TutorialPhaseProps) {
         <div className="max-w-4xl mx-auto space-y-8">
           {/* Introduction Section */}
           <div className="text-center space-y-6">
-            <div className="bg-gradient-to-r from-blue-50 to-green-50 p-8 rounded-xl border-2 border-blue-200">
+            <div className="bg-gray-50 p-8 rounded-xl border-2 border-blue-200">
               <div className="space-y-6">
                 <div className="flex items-center justify-center space-x-3">
                   <Package className="h-8 w-8 text-blue-600" />
@@ -414,7 +414,7 @@ export default function TutorialPhase({ onNext }: TutorialPhaseProps) {
       title: "Your Goals and Scoring",
       content: (
         <div className="max-w-4xl mx-auto space-y-8">
-          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-8 rounded-xl border-2 border-yellow-200">
+          <div className="bg-amber-50 p-8 rounded-xl border-2 border-yellow-200">
             <h3 className="text-2xl font-bold text-gray-900 mb-6">Before showing you more knapsack problems, somethings to note:</h3>
             <ol className="text-lg text-gray-700 space-y-4 list-decimal list-inside ml-4">
               <li><strong>No partial credit:</strong> you must achieve the highest possible points while keeping combined weight under capacity for your answer to be considered correct</li>

@@ -203,7 +203,7 @@ export default function KnapsackQuestion({
       </AnimatePresence>
 
       {/* Question Display */}
-      <div className="bg-gradient-to-br from-slate-50 to-gray-100 rounded-2xl p-6 border border-gray-200 shadow-lg">
+      <div className="bg-gray-50 rounded-xl p-6 border border-gray-200 shadow-sm">
         {/* Header Section */}
         <div className="text-center mb-6">
           <div className="inline-flex items-center space-x-2 bg-white rounded-xl px-4 py-2 shadow-md border">
@@ -287,10 +287,10 @@ export default function KnapsackQuestion({
                   className={`
                     relative p-4 rounded-2xl border-2 transition-all duration-300 cursor-pointer
                     ${isSelected
-                      ? "bg-white border-blue-400 shadow-xl ring-4 ring-blue-200 ring-opacity-50"
+                      ? "bg-white border-blue-500 shadow-md ring-2 ring-blue-200"
                       : isSolution
-                        ? "bg-white border-green-400 shadow-xl ring-4 ring-green-200 ring-opacity-50"
-                        : "bg-white border-gray-200 shadow-md hover:shadow-lg hover:border-gray-300"
+                        ? "bg-white border-green-500 shadow-md ring-2 ring-green-200"
+                        : "bg-white border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300"
                     }
                     ${!isInteractive || submitted ? "cursor-default" : ""}
                   `}
@@ -377,7 +377,7 @@ export default function KnapsackQuestion({
                 px-8 py-3 rounded-xl font-semibold shadow-lg transition-all duration-200
                 ${isOverCapacity
                   ? "bg-red-500 hover:bg-red-600"
-                  : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                  : "bg-blue-700 hover:bg-blue-800"
                 }
                 disabled:opacity-50 disabled:cursor-not-allowed
               `}
@@ -417,7 +417,7 @@ export default function KnapsackQuestion({
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-6 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-2xl"
+            className="mt-6 p-6 bg-emerald-50 border-2 border-green-200 rounded-2xl"
           >
             <h4 className="font-bold text-green-800 mb-4 flex items-center text-lg">
               <CheckCircle className="h-6 w-6 mr-2" />

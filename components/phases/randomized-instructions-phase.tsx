@@ -10,7 +10,7 @@ interface RandomizedInstructionsPhaseProps {
 
 export default function RandomizedInstructionsPhase({ onNext }: RandomizedInstructionsPhaseProps) {
     return (
-        <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
             <Card className="w-full max-w-2xl shadow-xl border-t-4 border-t-indigo-500">
                 <CardHeader className="text-center pb-2">
                     <div className="mx-auto w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4">

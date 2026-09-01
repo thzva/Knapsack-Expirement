@@ -219,7 +219,7 @@ export default function StrategyPhase({ onNext, updateParticipantData, benchmark
           </CardHeader>
 
           <CardContent className="space-y-6">
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-8 rounded-xl">
+            <div className="bg-gray-50 p-8 rounded-xl">
               <h3 className="text-2xl font-bold text-gray-900 mb-6">Before revealing your final score...</h3>
 
               <div className="text-left space-y-4 text-gray-700 mb-6">
@@ -270,7 +270,7 @@ export default function StrategyPhase({ onNext, updateParticipantData, benchmark
 
           <CardContent className="space-y-6">
             <div className="text-center">
-              <div className="bg-gradient-to-r from-green-50 to-blue-50 p-8 rounded-xl">
+              <div className="bg-gray-50 p-8 rounded-xl">
                 <h3 className="text-2xl font-bold text-gray-900 mb-6">Thank you for your insights!</h3>
 
                 <div className="grid md:grid-cols-3 gap-6 mb-6">

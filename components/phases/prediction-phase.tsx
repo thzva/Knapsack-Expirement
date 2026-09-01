@@ -293,7 +293,7 @@ export default function PredictionPhase({ onNext, updateParticipantData, partici
         <Card className="shadow-lg">
           <CardContent className="p-8 text-center">
             <div className="space-y-4">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-red-500 to-orange-600 rounded-2xl mb-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 rounded-2xl mb-4">
                 <Zap className="h-8 w-8 text-white animate-pulse" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900">Generating Final Test Questions</h2>
@@ -415,7 +415,7 @@ export default function PredictionPhase({ onNext, updateParticipantData, partici
 
           <CardContent className="space-y-6">
             <div className="text-center">
-              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-8 rounded-xl">
+              <div className="bg-emerald-50 p-8 rounded-xl">
                 <h3 className="text-2xl font-bold text-gray-900 mb-4">Thank you for completing the final test!</h3>
                 <p className="text-lg text-gray-600 mb-6">Click below to continue.</p>
                 <Button onClick={onNext} size="lg">
@@ -450,7 +450,7 @@ export default function PredictionPhase({ onNext, updateParticipantData, partici
   return (
     <div className="max-w-7xl mx-auto">
       {/* Top Section with Timer and Finish Button */}
-      <Card className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200">
+      <Card className="mb-6 bg-gray-50 border-2 border-blue-200">
         <CardContent className="p-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">

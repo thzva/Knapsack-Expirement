@@ -214,7 +214,7 @@ export default function TrainingPhase2({ onNext, updateParticipantData, particip
         <Card className="shadow-lg">
           <CardContent className="p-8 text-center">
             <div className="space-y-4">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl mb-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-600 rounded-2xl mb-4">
                 <Zap className="h-8 w-8 text-white animate-pulse" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900">Loading Test 1 Questions</h2>
@@ -323,7 +323,7 @@ export default function TrainingPhase2({ onNext, updateParticipantData, particip
 
           <CardContent className="space-y-6">
             <div className="text-center">
-              <div className="bg-gradient-to-r from-green-50 to-blue-50 p-8 rounded-xl">
+              <div className="bg-gray-50 p-8 rounded-xl">
                 <h3 className="text-2xl font-bold text-gray-900 mb-4">Thank you for completing Test 1!</h3>
                 <p className="text-lg text-gray-600 mb-6">Click below to continue to the next test.</p>
                 <Button onClick={onNext} size="lg">
