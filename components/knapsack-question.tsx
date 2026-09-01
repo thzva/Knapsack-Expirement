@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Package, Coins, Weight, CheckCircle, Zap, Star, Target, ShoppingBag } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { timeTracker } from "@/lib/time-tracker"
+import { ballColorClass } from "@/lib/ball-colors"
 
 interface Ball {
   id: number
@@ -300,9 +301,9 @@ export default function KnapsackQuestion({
                   <div className="flex justify-center mb-2">
                     <div
                       className={`
-                        w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg
-                        ${ball.color}
-                        ${isSelected ? "ring-4 ring-white ring-opacity-50" : ""}
+                        w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm
+                        ${ballColorClass(ball.color)}
+                        ${isSelected ? "ring-2 ring-offset-2 ring-blue-500" : ""}
                       `}
                     >
                       {ball.id}
@@ -374,12 +375,12 @@ export default function KnapsackQuestion({
               size="lg"
               title={isOverCapacity ? "Your selection exceeds the knapsack capacity. Remove items to confirm." : undefined}
               className={`
-                px-8 py-3 rounded-xl font-semibold shadow-lg transition-all duration-200
+                px-8 py-3 rounded-lg font-semibold shadow-sm transition-all duration-200
                 ${isOverCapacity
-                  ? "bg-red-500 hover:bg-red-600"
+                  ? "bg-red-600 hover:bg-red-700"
                   : "bg-blue-700 hover:bg-blue-800"
                 }
-                disabled:opacity-50 disabled:cursor-not-allowed
+                disabled:bg-gray-300 disabled:text-gray-500 disabled:opacity-100 disabled:cursor-not-allowed
               `}
             >
               {isOverCapacity ? "Over capacity — remove items to confirm" : "Confirm Answer"}

@@ -5,6 +5,7 @@ import Link from "next/link"
 import staticQuestions from "@/lib/static-questions.json"
 import type { Question } from "@/lib/static-loader"
 import { analyzeQuestion, rebuildQuestion, type Ball } from "@/lib/question-editing"
+import { ballColorClass } from "@/lib/ball-colors"
 import {
   emptyAssignments,
   loadAssignments,
@@ -27,7 +28,6 @@ import {
   Download,
   Eye,
   EyeOff,
-  Package,
   Pencil,
   RotateCcw,
   Search,
@@ -55,17 +55,12 @@ type Difficulty = "easy" | "medium" | "hard"
 const PHASES: Phase[] = ["training", "benchmark", "prediction"]
 const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard"]
 
-const difficultyStyles: Record<string, string> = {
-  easy: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  medium: "bg-amber-100 text-amber-800 border-amber-300",
-  hard: "bg-rose-100 text-rose-800 border-rose-300",
-  invalid: "bg-gray-200 text-gray-700 border-gray-300",
-}
-
-const phaseStyles: Record<string, string> = {
-  training: "bg-blue-100 text-blue-800 border-blue-300",
-  benchmark: "bg-violet-100 text-violet-800 border-violet-300",
-  prediction: "bg-cyan-100 text-cyan-800 border-cyan-300",
+// Each test draws from one phase pool by default; the bank opens there.
+const DEFAULT_PHASE_FOR_TASK: Record<TestKey, Phase> = {
+  practice: "training",
+  training2: "training",
+  benchmark: "benchmark",
+  prediction: "prediction",
 }
 
 function loadOverrides(): Record<number, Question> {
@@ -87,16 +82,25 @@ function saveOverrides(overrides: Record<number, Question>) {
   }
 }
 
+function optimalPoints(q: Question): number {
+  return (q.solution ?? []).reduce(
+    (sum, id) => sum + (q.balls.find((b) => b.id === id)?.reward ?? 0),
+    0,
+  )
+}
+
 export default function QuestionManager() {
   const [overrides, setOverrides] = useState<Record<number, Question>>({})
   const [assignments, setAssignments] = useState<Assignments>(emptyAssignments())
-  const [checked, setChecked] = useState<Set<number>>(new Set())
   const [loaded, setLoaded] = useState(false)
 
-  // Filters
-  const [phaseFilter, setPhaseFilter] = useState<Phase | "all">("all")
-  const [difficultyFilter, setDifficultyFilter] = useState<Difficulty | "all">("all")
-  const [editedOnly, setEditedOnly] = useState(false)
+  // Selection flow: task first, then difficulty, then the question panel.
+  const [task, setTask] = useState<TestKey>("practice")
+  const [difficulty, setDifficulty] = useState<Difficulty | "all">("all")
+  const [view, setView] = useState<"selected" | "bank">("selected")
+
+  // Bank browsing state
+  const [phaseFilter, setPhaseFilter] = useState<Phase | "all">("training")
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(20)
@@ -116,91 +120,79 @@ export default function QuestionManager() {
     () => data.questions.map((q) => overrides[q.id] ?? q),
     [overrides],
   )
+  const questionById = useMemo(() => new Map(questions.map((q) => [q.id, q])), [questions])
 
-  const filtered = useMemo(() => {
+  const switchTask = (t: TestKey) => {
+    setTask(t)
+    setView("selected")
+    setPhaseFilter(DEFAULT_PHASE_FOR_TASK[t])
+    setPage(0)
+  }
+
+  // Questions currently selected for the task (curated order), difficulty-filtered.
+  const selectedList = useMemo(() => {
+    const list = assignments[task]
+      .map((id) => questionById.get(id))
+      .filter((q): q is Question => Boolean(q))
+    return difficulty === "all" ? list : list.filter((q) => q.difficulty === difficulty)
+  }, [assignments, task, questionById, difficulty])
+
+  // Bank list: filters + sort + pagination.
+  const bankList = useMemo(() => {
     let list = questions
     if (phaseFilter !== "all") list = list.filter((q) => q.phase === phaseFilter)
-    if (difficultyFilter !== "all") list = list.filter((q) => q.difficulty === difficultyFilter)
-    if (editedOnly) list = list.filter((q) => overrides[q.id])
+    if (difficulty !== "all") list = list.filter((q) => q.difficulty === difficulty)
     const term = search.trim()
     if (term) list = list.filter((q) => String(q.id).includes(term))
-    return list
-  }, [questions, phaseFilter, difficultyFilter, editedOnly, search, overrides])
-
-  const sorted = useMemo(() => {
     const rank: Record<string, number> = { easy: 0, medium: 1, hard: 2 }
     const val = (q: Question) =>
       sortKey === "id" ? q.id :
       sortKey === "capacity" ? q.capacity :
       sortKey === "optimal" ? optimalPoints(q) :
       rank[q.difficulty ?? ""] ?? 3
-    return [...filtered].sort((a, b) => (val(a) - val(b)) * sortDir || a.id - b.id)
-  }, [filtered, sortKey, sortDir])
+    return [...list].sort((a, b) => (val(a) - val(b)) * sortDir || a.id - b.id)
+  }, [questions, phaseFilter, difficulty, search, sortKey, sortDir])
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
+  const pageCount = Math.max(1, Math.ceil(bankList.length / pageSize))
   const safePage = Math.min(page, pageCount - 1)
-  const pageItems = sorted.slice(safePage * pageSize, (safePage + 1) * pageSize)
+  const pageItems = bankList.slice(safePage * pageSize, (safePage + 1) * pageSize)
+
+  const assignedSet = useMemo(() => new Set(assignments[task]), [assignments, task])
   const editedCount = Object.keys(overrides).length
 
   const toggleSort = (key: typeof sortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === 1 ? -1 : 1))
-    } else {
+    if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1))
+    else {
       setSortKey(key)
       setSortDir(1)
     }
     setPage(0)
   }
 
-  // ----- Test page assignment -----
-
-  const assignedTestsById = useMemo(() => {
-    const map = new Map<number, TestKey[]>()
-    for (const key of TEST_KEYS) {
-      for (const id of assignments[key]) {
-        map.set(id, [...(map.get(id) ?? []), key])
-      }
-    }
-    return map
-  }, [assignments])
-
   const updateAssignments = (next: Assignments) => {
     setAssignments(next)
     saveAssignments(next)
   }
 
-  const toggleChecked = (id: number) => {
-    setChecked((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const addToTask = (id: number) => {
+    if (assignedSet.has(id)) return
+    updateAssignments({ ...assignments, [task]: [...assignments[task], id] })
   }
 
-  const allPageChecked = pageItems.length > 0 && pageItems.every((q) => checked.has(q.id))
-  const togglePageChecked = () => {
-    setChecked((prev) => {
-      const next = new Set(prev)
-      if (allPageChecked) pageItems.forEach((q) => next.delete(q.id))
-      else pageItems.forEach((q) => next.add(q.id))
-      return next
-    })
+  const removeFromTask = (id: number) => {
+    updateAssignments({ ...assignments, [task]: assignments[task].filter((x) => x !== id) })
   }
 
-  const assignChecked = (test: TestKey) => {
-    const existing = new Set(assignments[test])
-    const additions = sorted.filter((q) => checked.has(q.id) && !existing.has(q.id)).map((q) => q.id)
-    updateAssignments({ ...assignments, [test]: [...assignments[test], ...additions] })
-    setChecked(new Set())
+  const addPageToTask = () => {
+    const additions = pageItems.filter((q) => !assignedSet.has(q.id)).map((q) => q.id)
+    if (additions.length === 0) return
+    updateAssignments({ ...assignments, [task]: [...assignments[task], ...additions] })
   }
 
-  const removeFromTest = (test: TestKey, id: number) => {
-    updateAssignments({ ...assignments, [test]: assignments[test].filter((x) => x !== id) })
-  }
-
-  const clearTest = (test: TestKey) => {
-    updateAssignments({ ...assignments, [test]: [] })
+  const clearTask = () => {
+    if (assignments[task].length === 0) return
+    if (!window.confirm(`Remove all ${assignments[task].length} questions from ${TEST_LABELS[task]}?`)) return
+    updateAssignments({ ...assignments, [task]: [] })
   }
 
   const updateOverride = (q: Question) => {
@@ -216,7 +208,7 @@ export default function QuestionManager() {
     saveOverrides(next)
   }
 
-  const resetAll = () => {
+  const resetAllEdits = () => {
     if (!window.confirm("Discard ALL local edits and restore every question to its original version?")) return
     setOverrides({})
     saveOverrides({})
@@ -255,16 +247,17 @@ export default function QuestionManager() {
   if (!loaded) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent" />
+        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-700 border-r-transparent" />
       </div>
     )
   }
 
   if (selectedId !== null) {
     const original = data.questions.find((q) => q.id === selectedId)
-    const current = questions.find((q) => q.id === selectedId)
+    const current = questionById.get(selectedId)
     if (original && current) {
-      const idx = sorted.findIndex((q) => q.id === selectedId)
+      const navList = view === "selected" ? selectedList : bankList
+      const idx = navList.findIndex((q) => q.id === selectedId)
       return (
         <QuestionEditor
           key={selectedId}
@@ -274,10 +267,10 @@ export default function QuestionManager() {
           onBack={() => setSelectedId(null)}
           onSave={updateOverride}
           onRevert={() => removeOverride(selectedId)}
-          onPrev={idx > 0 ? () => setSelectedId(sorted[idx - 1].id) : undefined}
+          onPrev={idx > 0 ? () => setSelectedId(navList[idx - 1].id) : undefined}
           onNext={
-            idx >= 0 && idx < sorted.length - 1
-              ? () => setSelectedId(sorted[idx + 1].id)
+            idx >= 0 && idx < navList.length - 1
+              ? () => setSelectedId(navList[idx + 1].id)
               : undefined
           }
         />
@@ -287,17 +280,13 @@ export default function QuestionManager() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <Package className="h-8 w-8 text-blue-700" />
-              Question Bank Manager
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Browse and adjust the knapsack questions. The live preview shows each question
-              exactly as participants see it in the experiment.
+            <h1 className="text-2xl font-semibold text-gray-900">Question Bank Manager</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Pick a test, then review or change the questions it uses.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -311,7 +300,7 @@ export default function QuestionManager() {
             </Button>
             <Button
               variant="outline"
-              onClick={resetAll}
+              onClick={resetAllEdits}
               disabled={editedCount === 0}
               className="gap-2 text-rose-600 border-rose-200 hover:bg-rose-50"
             >
@@ -320,385 +309,381 @@ export default function QuestionManager() {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <StatCard label="Total Questions" value={data.questions.length} />
-          <StatCard label="Edited Locally" value={editedCount} highlight={editedCount > 0} />
-          <StatCard label="Matching Filters" value={filtered.length} />
-          <StatCard label="Items per Question" value={data.metadata.numBalls} />
+        {/* Step 1: task */}
+        <div className="mb-4">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Test</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {TEST_KEYS.map((t) => (
+              <button
+                key={t}
+                onClick={() => switchTask(t)}
+                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                  task === t
+                    ? "border-blue-700 bg-blue-700 text-white"
+                    : "border-gray-200 bg-white text-gray-900 hover:border-gray-300"
+                }`}
+              >
+                <div className="text-sm font-semibold">{TEST_LABELS[t]}</div>
+                <div className={`text-xs mt-0.5 ${task === t ? "text-blue-100" : "text-gray-500"}`}>
+                  {assignments[t].length > 0
+                    ? `${assignments[t].length} questions selected`
+                    : "Random sampling"}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Filters */}
-        <Card className="mb-6">
-          <CardContent className="p-4 flex flex-wrap items-center gap-4">
-            <div className="relative">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
+        {/* Step 2: difficulty */}
+        <div className="mb-6">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Difficulty</div>
+          <div className="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">
+            {(["all", ...DIFFICULTIES] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => {
+                  setDifficulty(d)
                   setPage(0)
                 }}
-                placeholder="Search by ID…"
-                className="pl-9 w-40"
-              />
-            </div>
-            <FilterGroup
-              label="Phase"
-              value={phaseFilter}
-              options={["all", ...PHASES]}
-              onChange={(v) => {
-                setPhaseFilter(v as Phase | "all")
-                setPage(0)
-              }}
-            />
-            <FilterGroup
-              label="Difficulty"
-              value={difficultyFilter}
-              options={["all", ...DIFFICULTIES]}
-              onChange={(v) => {
-                setDifficultyFilter(v as Difficulty | "all")
-                setPage(0)
-              }}
-            />
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={editedOnly}
-                onChange={(e) => {
-                  setEditedOnly(e.target.checked)
-                  setPage(0)
-                }}
-                className="h-4 w-4 accent-blue-600"
-              />
-              Edited only
-            </label>
-          </CardContent>
-        </Card>
-
-        {/* Test page assignment */}
-        <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-              <h2 className="font-semibold text-gray-900">Test Page Assignment</h2>
-              <p className="text-xs text-gray-500">
-                Tests with assigned questions use exactly those questions, in this order.
-                Empty tests fall back to random sampling. Saved automatically in this browser.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              {TEST_KEYS.map((test) => (
-                <div key={test} className="border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-900">{TEST_LABELS[test]}</span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-gray-600">
-                        {assignments[test].length}
-                      </Badge>
-                      {assignments[test].length > 0 && (
-                        <button
-                          onClick={() => clearTest(test)}
-                          className="text-xs text-rose-600 hover:underline"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {assignments[test].length === 0 ? (
-                    <p className="text-xs text-gray-400">Random sampling (default)</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                      {assignments[test].map((id) => (
-                        <span
-                          key={id}
-                          className="inline-flex items-center gap-1 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-xs text-gray-700"
-                        >
-                          <button className="hover:text-blue-700" onClick={() => setSelectedId(id)}>
-                            #{id}
-                          </button>
-                          <button
-                            className="text-gray-400 hover:text-rose-600"
-                            onClick={() => removeFromTest(test, id)}
-                            title="Remove from this test"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Bulk assign bar */}
-        {checked.size > 0 && (
-          <div className="flex flex-wrap items-center gap-3 mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <span className="text-sm font-medium text-blue-900">
-              {checked.size} selected — add to:
-            </span>
-            {TEST_KEYS.map((test) => (
-              <Button
-                key={test}
-                size="sm"
-                variant="outline"
-                className="bg-white"
-                onClick={() => assignChecked(test)}
+                className={`px-5 py-2 text-sm capitalize transition-colors ${
+                  difficulty === d
+                    ? "bg-blue-700 text-white"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
               >
-                {TEST_LABELS[test]}
-              </Button>
+                {d}
+              </button>
             ))}
-            <button
-              onClick={() => setChecked(new Set())}
-              className="text-sm text-gray-500 hover:underline ml-auto"
-            >
-              Clear selection
-            </button>
           </div>
-        )}
+        </div>
 
-        {/* Question table */}
+        {/* Step 3: question panel */}
         <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500">
-                  <th className="pl-4 pr-1 py-3 w-8">
-                    <input
-                      type="checkbox"
-                      checked={allPageChecked}
-                      onChange={togglePageChecked}
-                      className="h-4 w-4 accent-blue-700 align-middle"
-                      title="Select all on this page"
-                    />
-                  </th>
-                  <SortHeader label="ID" active={sortKey === "id"} dir={sortDir} onClick={() => toggleSort("id")} />
-                  <th className="px-4 py-3 font-medium">Phase</th>
-                  <SortHeader label="Difficulty" active={sortKey === "difficulty"} dir={sortDir} onClick={() => toggleSort("difficulty")} />
-                  <SortHeader label="Capacity" active={sortKey === "capacity"} dir={sortDir} onClick={() => toggleSort("capacity")} />
-                  <th className="px-4 py-3 font-medium">Items (weight / points)</th>
-                  <SortHeader label="Optimal" active={sortKey === "optimal"} dir={sortDir} onClick={() => toggleSort("optimal")} />
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-16 text-center text-gray-500">
-                      No questions match the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  pageItems.map((q) => (
-                    <tr
-                      key={q.id}
-                      className="border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer"
-                      onClick={() => setSelectedId(q.id)}
+          {/* Panel toolbar */}
+          <div className="border-b border-gray-200 px-4 pt-3 flex flex-wrap items-end justify-between gap-3">
+            <div className="flex gap-1">
+              <button
+                onClick={() => setView("selected")}
+                className={`px-4 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px ${
+                  view === "selected"
+                    ? "border-blue-700 text-blue-700"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                Selected for {TEST_LABELS[task]} ({selectedList.length})
+              </button>
+              <button
+                onClick={() => setView("bank")}
+                className={`px-4 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px ${
+                  view === "bank"
+                    ? "border-blue-700 text-blue-700"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                Question bank ({bankList.length})
+              </button>
+            </div>
+
+            {view === "selected" ? (
+              assignments[task].length > 0 && (
+                <button
+                  onClick={clearTask}
+                  className="text-sm text-rose-600 hover:underline pb-2"
+                >
+                  Clear all
+                </button>
+              )
+            ) : (
+              <div className="flex flex-wrap items-center gap-3 pb-2">
+                <div className="flex rounded-md border border-gray-200 overflow-hidden">
+                  {(["all", ...PHASES] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        setPhaseFilter(p)
+                        setPage(0)
+                      }}
+                      className={`px-3 py-1.5 text-xs capitalize transition-colors ${
+                        phaseFilter === p
+                          ? "bg-gray-800 text-white"
+                          : "bg-white text-gray-600 hover:bg-gray-50"
+                      }`}
                     >
-                      <td className="pl-4 pr-1 py-3" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={checked.has(q.id)}
-                          onChange={() => toggleChecked(q.id)}
-                          className="h-4 w-4 accent-blue-700 align-middle"
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-gray-900">#{q.id}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className={`capitalize ${phaseStyles[q.phase ?? ""] ?? ""}`}>
-                          {q.phase}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className={`capitalize ${difficultyStyles[q.difficulty ?? ""] ?? ""}`}>
-                          {q.difficulty}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-gray-900">{q.capacity}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1">
-                          {q.balls.map((ball) => (
-                            <span
-                              key={ball.id}
-                              className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${ball.color}`}
-                              title={`Item ${ball.id}: weight ${ball.weight}, points ${ball.reward}`}
-                            >
-                              {ball.weight}/{ball.reward}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{optimalPoints(q)} pts</td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-1">
-                          {overrides[q.id] ? (
-                            <Badge className="bg-blue-700 text-white">edited</Badge>
-                          ) : (
-                            <span className="text-gray-400">original</span>
-                          )}
-                          {(assignedTestsById.get(q.id) ?? []).map((test) => (
-                            <Badge
-                              key={test}
-                              variant="outline"
-                              className="text-[10px] px-1.5 bg-emerald-50 text-emerald-700 border-emerald-300"
-                              title={`Assigned to ${TEST_LABELS[test]}`}
-                            >
-                              {test === "practice" ? "P" : test === "training2" ? "T1" : test === "benchmark" ? "T2" : "T3"}
-                            </Badge>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedId(q.id)
-                          }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" /> Edit
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative">
+                  <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value)
+                      setPage(0)
+                    }}
+                    placeholder="Search ID…"
+                    className="pl-8 h-8 w-32 text-sm"
+                  />
+                </div>
+                <button
+                  onClick={addPageToTask}
+                  className="text-sm text-blue-700 hover:underline"
+                >
+                  Add page to test
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Table footer: range info, page size, pagination */}
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
-            <span className="text-sm text-gray-500">
-              Showing {sorted.length === 0 ? 0 : safePage * pageSize + 1}–
-              {Math.min((safePage + 1) * pageSize, sorted.length)} of {sorted.length}
-            </span>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 text-sm text-gray-600">
-                Rows per page:
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value))
-                    setPage(0)
-                  }}
-                  className="border border-gray-200 rounded-md px-2 py-1 text-sm bg-white"
-                >
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </label>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={safePage === 0}
-                  onClick={() => setPage(safePage - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" /> Prev
-                </Button>
-                <span className="text-sm text-gray-600 whitespace-nowrap">
-                  Page {safePage + 1} / {pageCount}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={safePage >= pageCount - 1}
-                  onClick={() => setPage(safePage + 1)}
-                >
-                  Next <ChevronRight className="h-4 w-4" />
+          {/* Selected view */}
+          {view === "selected" && (
+            selectedList.length === 0 ? (
+              <div className="py-16 text-center">
+                <p className="text-gray-600 mb-1">
+                  {assignments[task].length === 0
+                    ? `No questions selected for ${TEST_LABELS[task]} yet.`
+                    : "No selected questions match this difficulty."}
+                </p>
+                {assignments[task].length === 0 && (
+                  <p className="text-sm text-gray-400 mb-4">
+                    The experiment currently uses random sampling for this test.
+                  </p>
+                )}
+                <Button variant="outline" onClick={() => setView("bank")}>
+                  Browse the question bank
                 </Button>
               </div>
-            </div>
-          </div>
+            ) : (
+              <QuestionTable
+                rows={selectedList}
+                overrides={overrides}
+                showOrder
+                onEdit={(id) => setSelectedId(id)}
+                actionFor={(q) => (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeFromTask(q.id)
+                    }}
+                  >
+                    Remove
+                  </Button>
+                )}
+              />
+            )
+          )}
+
+          {/* Bank view */}
+          {view === "bank" && (
+            <>
+              <QuestionTable
+                rows={pageItems}
+                overrides={overrides}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={toggleSort}
+                onEdit={(id) => setSelectedId(id)}
+                inTask={assignedSet}
+                actionFor={(q) =>
+                  assignedSet.has(q.id) ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeFromTask(q.id)
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-blue-700 border-blue-200 hover:bg-blue-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        addToTask(q.id)
+                      }}
+                    >
+                      Add
+                    </Button>
+                  )
+                }
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
+                <span className="text-sm text-gray-500">
+                  Showing {bankList.length === 0 ? 0 : safePage * pageSize + 1}–
+                  {Math.min((safePage + 1) * pageSize, bankList.length)} of {bankList.length}
+                </span>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    Rows per page:
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value))
+                        setPage(0)
+                      }}
+                      className="border border-gray-200 rounded-md px-2 py-1 text-sm bg-white"
+                    >
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={safePage === 0}
+                      onClick={() => setPage(safePage - 1)}
+                    >
+                      <ChevronLeft className="h-4 w-4" /> Prev
+                    </Button>
+                    <span className="text-sm text-gray-600 whitespace-nowrap">
+                      Page {safePage + 1} / {pageCount}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={safePage >= pageCount - 1}
+                      onClick={() => setPage(safePage + 1)}
+                    >
+                      Next <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </Card>
+
+        <p className="text-xs text-gray-400 mt-4">
+          A test with selected questions uses exactly those questions, in this order; a test with
+          none falls back to random sampling. Selections and edits are saved automatically in this
+          browser and included in Export JSON.
+        </p>
       </div>
     </div>
   )
 }
 
-function StatCard({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
-  return (
-    <Card className={highlight ? "border-blue-300 bg-blue-50" : ""}>
-      <CardContent className="p-4">
-        <div className="text-xs font-medium text-gray-500">{label}</div>
-        <div className={`text-2xl font-bold ${highlight ? "text-blue-700" : "text-gray-900"}`}>
-          {value}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function FilterGroup({
-  label,
-  value,
-  options,
-  onChange,
+/** Shared plain table for both the selected list and the bank. */
+function QuestionTable({
+  rows,
+  overrides,
+  showOrder,
+  sortKey,
+  sortDir,
+  onSort,
+  onEdit,
+  inTask,
+  actionFor,
 }: {
-  label: string
-  value: string
-  options: string[]
-  onChange: (v: string) => void
+  rows: Question[]
+  overrides: Record<number, Question>
+  showOrder?: boolean
+  sortKey?: "id" | "capacity" | "optimal" | "difficulty"
+  sortDir?: 1 | -1
+  onSort?: (k: "id" | "capacity" | "optimal" | "difficulty") => void
+  onEdit: (id: number) => void
+  inTask?: Set<number>
+  actionFor: (q: Question) => React.ReactNode
 }) {
+  const sortable = Boolean(onSort)
+  const header = (label: string, key?: "id" | "capacity" | "optimal" | "difficulty") =>
+    sortable && key ? (
+      <th
+        className="px-4 py-3 font-medium cursor-pointer select-none hover:text-gray-900"
+        onClick={() => onSort!(key)}
+      >
+        <span className={`inline-flex items-center gap-1 ${sortKey === key ? "text-blue-700" : ""}`}>
+          {label}
+          {sortKey === key ? (
+            <span className="text-[10px]">{sortDir === 1 ? "▲" : "▼"}</span>
+          ) : (
+            <ArrowUpDown className="h-3 w-3 opacity-40" />
+          )}
+        </span>
+      </th>
+    ) : (
+      <th className="px-4 py-3 font-medium">{label}</th>
+    )
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm font-medium text-gray-600">{label}:</span>
-      <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-        {options.map((opt) => (
-          <button
-            key={opt}
-            onClick={() => onChange(opt)}
-            className={`px-3 py-1.5 text-sm capitalize transition-colors ${
-              value === opt ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500">
+            {showOrder && <th className="px-4 py-3 font-medium w-10">#</th>}
+            {header("ID", "id")}
+            <th className="px-4 py-3 font-medium">Phase</th>
+            {header("Difficulty", "difficulty")}
+            {header("Capacity", "capacity")}
+            <th className="px-4 py-3 font-medium">Items (weight / points)</th>
+            {header("Optimal", "optimal")}
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={showOrder ? 9 : 8} className="px-4 py-16 text-center text-gray-500">
+                No questions to show.
+              </td>
+            </tr>
+          ) : (
+            rows.map((q, i) => (
+              <tr
+                key={q.id}
+                className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+                onClick={() => onEdit(q.id)}
+              >
+                {showOrder && <td className="px-4 py-3 text-gray-400">{i + 1}</td>}
+                <td className="px-4 py-3 font-medium text-gray-900">#{q.id}</td>
+                <td className="px-4 py-3 text-gray-500 capitalize">{q.phase}</td>
+                <td className="px-4 py-3 text-gray-700 capitalize">{q.difficulty}</td>
+                <td className="px-4 py-3 text-gray-900">{q.capacity}</td>
+                <td className="px-4 py-3">
+                  <span className="font-mono text-xs text-gray-600">
+                    {q.balls.map((b) => `${b.weight}/${b.reward}`).join("  ")}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-gray-900">{optimalPoints(q)}</td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex items-center gap-2">
+                    {overrides[q.id] ? (
+                      <span className="text-blue-700 font-medium">edited</span>
+                    ) : (
+                      <span className="text-gray-400">original</span>
+                    )}
+                    {inTask?.has(q.id) && (
+                      <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 text-[10px]">
+                        in test
+                      </Badge>
+                    )}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onEdit(q.id)}>
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </Button>
+                    {actionFor(q)}
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
-  )
-}
-
-function optimalPoints(q: Question): number {
-  return (q.solution ?? []).reduce(
-    (sum, id) => sum + (q.balls.find((b) => b.id === id)?.reward ?? 0),
-    0,
-  )
-}
-
-function SortHeader({
-  label,
-  active,
-  dir,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  dir: 1 | -1
-  onClick: () => void
-}) {
-  return (
-    <th
-      className="px-4 py-3 font-medium cursor-pointer select-none hover:text-gray-900"
-      onClick={onClick}
-    >
-      <span className={`inline-flex items-center gap-1 ${active ? "text-blue-700" : ""}`}>
-        {label}
-        {active ? (
-          <span className="text-[10px]">{dir === 1 ? "▲" : "▼"}</span>
-        ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-40" />
-        )}
-      </span>
-    </th>
   )
 }
 
@@ -765,16 +750,10 @@ function QuestionEditor({
             <Button variant="outline" onClick={onBack} className="gap-2">
               <ArrowLeft className="h-4 w-4" /> Back to list
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Pencil className="h-5 w-5 text-blue-600" /> Question #{current.id}
-            </h1>
-            <Badge variant="outline" className={`capitalize ${phaseStyles[current.phase ?? ""] ?? ""}`}>
-              {current.phase}
-            </Badge>
-            <Badge variant="outline" className={`capitalize ${difficultyStyles[draft.difficulty ?? ""] ?? ""}`}>
-              {draft.difficulty}
-            </Badge>
-            {isEdited && <Badge className="bg-blue-600 text-white">edited</Badge>}
+            <h1 className="text-2xl font-semibold text-gray-900">Question #{current.id}</h1>
+            <span className="text-sm text-gray-500 capitalize">{current.phase}</span>
+            <span className="text-sm text-gray-500 capitalize">{draft.difficulty}</span>
+            {isEdited && <Badge className="bg-blue-700 text-white">edited</Badge>}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled={!onPrev} onClick={onPrev}>
@@ -821,7 +800,7 @@ function QuestionEditor({
                       <tr key={ball.id} className="border-t border-gray-100">
                         <td className="py-2">
                           <div
-                            className={`w-8 h-8 rounded-full ${ball.color} text-white flex items-center justify-center font-bold text-sm`}
+                            className={`w-8 h-8 rounded-full ${ballColorClass(ball.color)} text-white flex items-center justify-center font-bold text-sm`}
                           >
                             {ball.id}
                           </div>
@@ -849,7 +828,7 @@ function QuestionEditor({
                         </td>
                         <td className="py-2">
                           {analysis.solution.includes(ball.id) ? (
-                            <Badge className="bg-emerald-500 text-white">yes</Badge>
+                            <Badge className="bg-emerald-600 text-white">yes</Badge>
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
@@ -893,20 +872,8 @@ function QuestionEditor({
                     label="Optimal Points / Weight"
                     value={`${analysis.maxReward} pts · ${analysis.solutionWeight}/${capacity}`}
                   />
-                  <AnalysisRow
-                    label="Computed Difficulty"
-                    value={analysis.computedDifficulty}
-                    badgeClass={difficultyStyles[analysis.computedDifficulty]}
-                  />
-                  <AnalysisRow
-                    label="Unique Optimum"
-                    value={analysis.uniqueOptimal ? "yes" : "no"}
-                    badgeClass={
-                      analysis.uniqueOptimal
-                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                        : "bg-rose-100 text-rose-800 border-rose-300"
-                    }
-                  />
+                  <AnalysisRow label="Computed Difficulty" value={analysis.computedDifficulty} />
+                  <AnalysisRow label="Unique Optimum" value={analysis.uniqueOptimal ? "yes" : "no"} />
                   <AnalysisRow label="Dominated Items" value={String(analysis.metadata.dominanceCount)} />
                   <AnalysisRow label="Slack Ratio" value={analysis.metadata.slackRatio.toFixed(3)} />
                   <AnalysisRow label="Optimality Gap" value={String(analysis.metadata.optimalityGap)} />
@@ -974,25 +941,11 @@ function QuestionEditor({
   )
 }
 
-function AnalysisRow({
-  label,
-  value,
-  badgeClass,
-}: {
-  label: string
-  value: string
-  badgeClass?: string
-}) {
+function AnalysisRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-gray-50 rounded-lg px-3 py-2">
       <div className="text-xs text-gray-500">{label}</div>
-      {badgeClass ? (
-        <Badge variant="outline" className={`capitalize mt-0.5 ${badgeClass}`}>
-          {value}
-        </Badge>
-      ) : (
-        <div className="font-semibold text-gray-900 break-words">{value}</div>
-      )}
+      <div className="font-medium text-gray-900 break-words capitalize">{value}</div>
     </div>
   )
 }
