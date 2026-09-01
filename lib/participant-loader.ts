@@ -6,7 +6,7 @@
 
 import staticQuestions from './static-questions.json';
 import { NUM_BALLS } from './config';
-import { getAssignedQuestions, withOverrides } from './experiment-selection';
+import { getExcludedIds, withOverrides, type TestKey } from './experiment-selection';
 
 export interface Ball {
   id: number;
@@ -80,11 +80,16 @@ export function seedFor(participantId: string | null | undefined, phase: string)
 /**
  * Load questions for a specific phase and difficulty
  */
-function loadQuestionsForPhase(phase: 'training' | 'benchmark' | 'prediction'): QuestionSet {
+function loadQuestionsForPhase(
+  phase: 'training' | 'benchmark' | 'prediction',
+  excludedFor?: TestKey,
+): QuestionSet {
   // Apply manager edits BEFORE difficulty bucketing, so an edited difficulty
-  // moves the question into the right sampling bucket.
+  // moves the question into the right sampling bucket. Questions excluded in
+  // the manager are dropped from the test's pool entirely.
+  const excluded = excludedFor ? getExcludedIds(excludedFor) : null;
   const phaseQuestions = withOverrides((staticQuestions.questions as Question[]).filter(
-    (q) => q.phase === phase && q.balls.length === NUM_BALLS
+    (q) => q.phase === phase && q.balls.length === NUM_BALLS && !excluded?.has(q.id)
   ));
 
   return {
@@ -150,11 +155,7 @@ function randomizeQuestionOrder(
  * Get practice questions (hardcoded 6 questions: 2 easy + 2 medium + 2 hard)
  */
 export function getPracticeQuestions(): Question[] {
-  // Curated set from the Question Bank Manager takes precedence.
-  const assigned = getAssignedQuestions('practice') as Question[] | null;
-  if (assigned) return assigned;
-
-  const questions = loadQuestionsForPhase('training');
+  const questions = loadQuestionsForPhase('training', 'practice');
 
   // We want EXACTLY 6 total questions: 2 Easy, 2 Medium, 2 Hard
   // We'll shuffle each difficulty bucket separately and take 2 from each
@@ -175,11 +176,7 @@ export function getPracticeQuestions(): Question[] {
  * Questions are GROUPED by difficulty (easy first, then medium, then hard)
  */
 export function getSkillTestQuestions(): Question[] {
-  // Curated set from the Question Bank Manager takes precedence.
-  const assigned = getAssignedQuestions('training2') as Question[] | null;
-  if (assigned) return assigned;
-
-  const questions = loadQuestionsForPhase('training');
+  const questions = loadQuestionsForPhase('training', 'training2');
 
   // Shuffle within each difficulty group, but keep groups separate
   const shuffledEasy = shuffle(questions.easy);
@@ -203,12 +200,9 @@ export function getSkillTestQuestions(): Question[] {
  * Uniformly sampled from ALL available benchmark questions (approx 300)
  */
 export function getBenchmarkPhaseQuestions(participantId?: string | null): Question[] {
-  // Curated set from the Question Bank Manager takes precedence.
-  const assigned = getAssignedQuestions('benchmark') as Question[] | null;
-  if (assigned) return assigned;
-
+  const excluded = getExcludedIds('benchmark');
   const allQuestions = (staticQuestions.questions as Question[]).filter(
-    (q) => q.phase === 'benchmark' && q.balls.length === NUM_BALLS
+    (q) => q.phase === 'benchmark' && q.balls.length === NUM_BALLS && !excluded.has(q.id)
   );
   // Seed with participantId so a refresh returns the SAME 30 questions —
   // otherwise already-confirmed answer keys wouldn't match the new shuffle.
@@ -220,12 +214,9 @@ export function getBenchmarkPhaseQuestions(participantId?: string | null): Quest
  * Get questions for Final Test (Test 3): 30 deterministic-per-participant questions
  */
 export function getPredictionPhaseQuestions(participantId?: string | null): Question[] {
-  // Curated set from the Question Bank Manager takes precedence.
-  const assigned = getAssignedQuestions('prediction') as Question[] | null;
-  if (assigned) return assigned;
-
+  const excluded = getExcludedIds('prediction');
   const allQuestions = (staticQuestions.questions as Question[]).filter(
-    (q) => q.phase === 'prediction' && q.balls.length === NUM_BALLS
+    (q) => q.phase === 'prediction' && q.balls.length === NUM_BALLS && !excluded.has(q.id)
   );
   const seed = seedFor(participantId, 'prediction');
   return withOverrides(shuffle(allQuestions, seed).slice(0, 30));

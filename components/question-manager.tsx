@@ -7,12 +7,12 @@ import type { Question } from "@/lib/static-loader"
 import { analyzeQuestion, rebuildQuestion, type Ball } from "@/lib/question-editing"
 import { ballColorClass } from "@/lib/ball-colors"
 import {
-  emptyAssignments,
-  loadAssignments,
-  saveAssignments,
+  emptyExclusions,
+  loadExclusions,
+  saveExclusions,
   TEST_KEYS,
   TEST_LABELS,
-  type Assignments,
+  type Exclusions,
   type TestKey,
 } from "@/lib/experiment-selection"
 import KnapsackQuestion from "@/components/knapsack-question"
@@ -91,13 +91,12 @@ function optimalPoints(q: Question): number {
 
 export default function QuestionManager() {
   const [overrides, setOverrides] = useState<Record<number, Question>>({})
-  const [assignments, setAssignments] = useState<Assignments>(emptyAssignments())
+  const [exclusions, setExclusions] = useState<Exclusions>(emptyExclusions())
   const [loaded, setLoaded] = useState(false)
 
-  // Selection flow: task first, then difficulty, then the question panel.
+  // Selection flow: task first, then difficulty, then the question pool.
   const [task, setTask] = useState<TestKey>("practice")
   const [difficulty, setDifficulty] = useState<Difficulty | "all">("all")
-  const [view, setView] = useState<"selected" | "bank">("selected")
 
   // Bank browsing state
   const [phaseFilter, setPhaseFilter] = useState<Phase | "all">("training")
@@ -112,7 +111,7 @@ export default function QuestionManager() {
 
   useEffect(() => {
     setOverrides(loadOverrides())
-    setAssignments(loadAssignments())
+    setExclusions(loadExclusions())
     setLoaded(true)
   }, [])
 
@@ -124,20 +123,14 @@ export default function QuestionManager() {
 
   const switchTask = (t: TestKey) => {
     setTask(t)
-    setView("selected")
     setPhaseFilter(DEFAULT_PHASE_FOR_TASK[t])
     setPage(0)
   }
 
-  // Questions currently selected for the task (curated order), difficulty-filtered.
-  const selectedList = useMemo(() => {
-    const list = assignments[task]
-      .map((id) => questionById.get(id))
-      .filter((q): q is Question => Boolean(q))
-    return difficulty === "all" ? list : list.filter((q) => q.difficulty === difficulty)
-  }, [assignments, task, questionById, difficulty])
+  const excludedSet = useMemo(() => new Set(exclusions[task]), [exclusions, task])
 
-  // Bank list: filters + sort + pagination.
+  // The full bank stays visible; excluded questions are only marked, not
+  // hidden — exclusion affects the experiment's random draw, nothing else.
   const bankList = useMemo(() => {
     let list = questions
     if (phaseFilter !== "all") list = list.filter((q) => q.phase === phaseFilter)
@@ -162,7 +155,6 @@ export default function QuestionManager() {
   const safePage = Math.min(page, pageCount - 1)
   const pageItems = bankList.slice(safePage * pageSize, (safePage + 1) * pageSize)
 
-  const assignedSet = useMemo(() => new Set(assignments[task]), [assignments, task])
   const editedCount = Object.keys(overrides).length
 
   const toggleSort = (key: typeof sortKey) => {
@@ -174,30 +166,24 @@ export default function QuestionManager() {
     setPage(0)
   }
 
-  const updateAssignments = (next: Assignments) => {
-    setAssignments(next)
-    saveAssignments(next)
+  const updateExclusions = (next: Exclusions) => {
+    setExclusions(next)
+    saveExclusions(next)
   }
 
-  const addToTask = (id: number) => {
-    if (assignedSet.has(id)) return
-    updateAssignments({ ...assignments, [task]: [...assignments[task], id] })
+  const excludeFromTask = (id: number) => {
+    if (excludedSet.has(id)) return
+    updateExclusions({ ...exclusions, [task]: [...exclusions[task], id] })
   }
 
-  const removeFromTask = (id: number) => {
-    updateAssignments({ ...assignments, [task]: assignments[task].filter((x) => x !== id) })
+  const restoreToTask = (id: number) => {
+    updateExclusions({ ...exclusions, [task]: exclusions[task].filter((x) => x !== id) })
   }
 
-  const addPageToTask = () => {
-    const additions = pageItems.filter((q) => !assignedSet.has(q.id)).map((q) => q.id)
-    if (additions.length === 0) return
-    updateAssignments({ ...assignments, [task]: [...assignments[task], ...additions] })
-  }
-
-  const clearTask = () => {
-    if (assignments[task].length === 0) return
-    if (!window.confirm(`Remove all ${assignments[task].length} questions from ${TEST_LABELS[task]}?`)) return
-    updateAssignments({ ...assignments, [task]: [] })
+  const restoreAll = () => {
+    if (exclusions[task].length === 0) return
+    if (!window.confirm(`Restore all ${exclusions[task].length} excluded questions to the ${TEST_LABELS[task]} pool?`)) return
+    updateExclusions({ ...exclusions, [task]: [] })
   }
 
   const updateOverride = (q: Question) => {
@@ -236,7 +222,7 @@ export default function QuestionManager() {
         statistics,
         editedAt: new Date().toISOString(),
         editedQuestions: Object.keys(overrides).map(Number).sort((a, b) => a - b),
-        testAssignments: assignments,
+        testExclusions: exclusions,
       },
       questions: merged,
     }
@@ -261,7 +247,7 @@ export default function QuestionManager() {
     const original = data.questions.find((q) => q.id === selectedId)
     const current = questionById.get(selectedId)
     if (original && current) {
-      const navList = view === "selected" ? selectedList : bankList
+      const navList = bankList
       const idx = navList.findIndex((q) => q.id === selectedId)
       return (
         <QuestionEditor
@@ -330,9 +316,9 @@ export default function QuestionManager() {
               >
                 <div className="text-sm font-semibold">{TEST_LABELS[t]}</div>
                 <div className={`text-xs mt-0.5 ${task === t ? "text-blue-100" : "text-gray-500"}`}>
-                  {assignments[t].length > 0
-                    ? `${assignments[t].length} questions selected`
-                    : "Random sampling"}
+                  {exclusions[t].length > 0
+                    ? `${exclusions[t].length} excluded`
+                    : "Full pool"}
                 </div>
               </button>
             ))}
@@ -365,161 +351,92 @@ export default function QuestionManager() {
         {/* Step 3: question panel */}
         <Card>
           {/* Panel toolbar */}
-          <div className="border-b border-gray-200 px-4 pt-3 flex flex-wrap items-end justify-between gap-3">
-            <div className="flex gap-1">
-              <button
-                onClick={() => setView("selected")}
-                className={`px-4 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px ${
-                  view === "selected"
-                    ? "border-blue-700 text-blue-700"
-                    : "border-transparent text-gray-500 hover:text-gray-800"
-                }`}
-              >
-                Selected for {TEST_LABELS[task]} ({selectedList.length})
-              </button>
-              <button
-                onClick={() => setView("bank")}
-                className={`px-4 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px ${
-                  view === "bank"
-                    ? "border-blue-700 text-blue-700"
-                    : "border-transparent text-gray-500 hover:text-gray-800"
-                }`}
-              >
-                Question bank ({bankList.length})
-              </button>
+          <div className="border-b border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-medium text-gray-900">
+              Question bank for {TEST_LABELS[task]} ({bankList.length})
+              {exclusions[task].length > 0 && (
+                <span className="ml-2 font-normal text-gray-500">
+                  · {exclusions[task].length} excluded from the random draw
+                </span>
+              )}
             </div>
-
-            {view === "selected" ? (
-              assignments[task].length > 0 && (
-                <button
-                  onClick={clearTask}
-                  className="text-sm text-rose-600 hover:underline pb-2"
-                >
-                  Clear all
-                </button>
-              )
-            ) : (
-              <div className="flex flex-wrap items-center gap-3 pb-2">
-                <div className="flex rounded-md border border-gray-200 overflow-hidden">
-                  {(["all", ...PHASES] as const).map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => {
-                        setPhaseFilter(p)
-                        setPage(0)
-                      }}
-                      className={`px-3 py-1.5 text-xs capitalize transition-colors ${
-                        phaseFilter === p
-                          ? "bg-gray-800 text-white"
-                          : "bg-white text-gray-600 hover:bg-gray-50"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-                <div className="relative">
-                  <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <Input
-                    value={search}
-                    onChange={(e) => {
-                      setSearch(e.target.value)
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex rounded-md border border-gray-200 overflow-hidden">
+                {(["all", ...PHASES] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => {
+                      setPhaseFilter(p)
                       setPage(0)
                     }}
-                    placeholder="Search ID…"
-                    className="pl-8 h-8 w-32 text-sm"
-                  />
-                </div>
-                <button
-                  onClick={addPageToTask}
-                  className="text-sm text-blue-700 hover:underline"
-                >
-                  Add page to test
-                </button>
+                    className={`px-3 py-1.5 text-xs capitalize transition-colors ${
+                      phaseFilter === p
+                        ? "bg-gray-800 text-white"
+                        : "bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
               </div>
-            )}
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value)
+                    setPage(0)
+                  }}
+                  placeholder="Search ID…"
+                  className="pl-8 h-8 w-32 text-sm"
+                />
+              </div>
+              {exclusions[task].length > 0 && (
+                <button onClick={restoreAll} className="text-sm text-blue-700 hover:underline">
+                  Restore all
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Selected view */}
-          {view === "selected" && (
-            selectedList.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-gray-600 mb-1">
-                  {assignments[task].length === 0
-                    ? `No questions selected for ${TEST_LABELS[task]} yet.`
-                    : "No selected questions match this difficulty."}
-                </p>
-                {assignments[task].length === 0 && (
-                  <p className="text-sm text-gray-400 mb-4">
-                    The experiment currently uses random sampling for this test.
-                  </p>
-                )}
-                <Button variant="outline" onClick={() => setView("bank")}>
-                  Browse the question bank
+          <QuestionTable
+            rows={pageItems}
+            overrides={overrides}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={toggleSort}
+            onEdit={(id) => setSelectedId(id)}
+            mutedIds={excludedSet}
+            actionFor={(q) =>
+              excludedSet.has(q.id) ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-gray-500 border-gray-300 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
+                  title="Not in the random draw for this test — click to put it back"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    restoreToTask(q.id)
+                  }}
+                >
+                  Excluded
                 </Button>
-              </div>
-            ) : (
-              <QuestionTable
-                rows={selectedList}
-                overrides={overrides}
-                showOrder
-                onEdit={(id) => setSelectedId(id)}
-                actionFor={(q) => (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-rose-600 border-rose-200 hover:bg-rose-50"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removeFromTask(q.id)
-                    }}
-                  >
-                    Remove
-                  </Button>
-                )}
-              />
-            )
-          )}
-
-          {/* Bank view */}
-          {view === "bank" && (
-            <>
-              <QuestionTable
-                rows={pageItems}
-                overrides={overrides}
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-                onEdit={(id) => setSelectedId(id)}
-                inTask={assignedSet}
-                actionFor={(q) =>
-                  assignedSet.has(q.id) ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-rose-600 border-rose-200 hover:bg-rose-50"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        removeFromTask(q.id)
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-blue-700 border-blue-200 hover:bg-blue-50"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        addToTask(q.id)
-                      }}
-                    >
-                      Add
-                    </Button>
-                  )
-                }
-              />
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-emerald-700 border-emerald-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300"
+                  title="In the random draw for this test — click to exclude it"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    excludeFromTask(q.id)
+                  }}
+                >
+                  In pool
+                </Button>
+              )
+            }
+          />
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
                 <span className="text-sm text-gray-500">
                   Showing {bankList.length === 0 ? 0 : safePage * pageSize + 1}–
@@ -564,14 +481,12 @@ export default function QuestionManager() {
                   </div>
                 </div>
               </div>
-            </>
-          )}
         </Card>
 
         <p className="text-xs text-gray-400 mt-4">
-          A test with selected questions uses exactly those questions, in this order; a test with
-          none falls back to random sampling. Selections and edits are saved automatically in this
-          browser and included in Export JSON.
+          Every question starts as a candidate for its test. Questions removed from the pool are
+          never drawn for that test; each test samples randomly from what remains. Exclusions and
+          edits are saved automatically in this browser and included in Export JSON.
         </p>
       </div>
     </div>
@@ -587,7 +502,7 @@ function QuestionTable({
   sortDir,
   onSort,
   onEdit,
-  inTask,
+  mutedIds,
   actionFor,
 }: {
   rows: Question[]
@@ -597,7 +512,7 @@ function QuestionTable({
   sortDir?: 1 | -1
   onSort?: (k: "id" | "capacity" | "optimal" | "difficulty") => void
   onEdit: (id: number) => void
-  inTask?: Set<number>
+  mutedIds?: Set<number>
   actionFor: (q: Question) => React.ReactNode
 }) {
   const sortable = Boolean(onSort)
@@ -651,7 +566,7 @@ function QuestionTable({
                   overrides[q.id]
                     ? "bg-slate-100 hover:bg-slate-200"
                     : "hover:bg-gray-50"
-                }`}
+                } ${mutedIds?.has(q.id) ? "opacity-50" : ""}`}
                 onClick={() => onEdit(q.id)}
               >
                 {showOrder && <td className="px-4 py-3 text-gray-400">{i + 1}</td>}
@@ -671,11 +586,6 @@ function QuestionTable({
                       <span className="text-blue-700 font-medium">edited</span>
                     ) : (
                       <span className="text-gray-400">original</span>
-                    )}
-                    {inTask?.has(q.id) && (
-                      <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 text-[10px]">
-                        in test
-                      </Badge>
                     )}
                   </span>
                 </td>
