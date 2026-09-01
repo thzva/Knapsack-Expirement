@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo, useCallback, Suspense, lazy } from "react"
-import { useRouter } from "next/navigation"
 import { Progress } from "@/components/ui/progress"
 import { Gift, Trophy, Clock, Target, Brain, AlertCircle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
@@ -41,7 +40,6 @@ const phases = [
 ]
 
 export default function KnapsackExperiment() {
-  const router = useRouter()
   const [currentPhase, setCurrentPhase] = useState("intro")
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [participantData, setParticipantData] = useState({
@@ -66,125 +64,43 @@ export default function KnapsackExperiment() {
   useEffect(() => {
     let cancelled = false
 
-    // Check for Prolific parameters - REQUIRED for access
-    const urlParams = new URLSearchParams(window.location.search)
-    const prolificPid = urlParams.get('PROLIFIC_PID')
-    const studyId = urlParams.get('STUDY_ID')
-    const sessionId = urlParams.get('SESSION_ID')
-
-    // DEBUG: Log parameters to help troubleshoot
-    console.log('[Access Check] Prolific Parameters:', {
-      prolificPid,
-      studyId,
-      sessionId,
-      fullURL: window.location.href,
-      searchParams: window.location.search
-    })
-
-    // Set Prolific parameters
-    setProlificParams({
-      prolificPid,
-      studyId,
-      sessionId,
-    })
-
-    // TEMPORARILY DISABLED FOR TESTING: Access restriction removed
-    // TODO: Re-enable before production launch
-    // SECURITY: Only allow access with valid Prolific parameters
-    // Check if parameters are template variables (not replaced by Prolific)
-    const hasTemplateVariables = prolificPid?.includes('{{') || studyId?.includes('{{') || sessionId?.includes('{{')
-
-    // Allow access from CoLab internal system (studyId = 'colab-knapsack')
-    const isColabInternal = studyId === 'colab-knapsack' || prolificPid?.includes('@')
-    
-    if (!prolificPid || !studyId || !sessionId || hasTemplateVariables) {
-      console.error('[Access Check] Invalid or missing parameters:', {
-        hasTemplateVariables,
-        prolificPid: prolificPid || 'MISSING',
-        studyId: studyId || 'MISSING',
-        sessionId: sessionId || 'MISSING',
-        isColabInternal
-      })
-
-      // Allow if it's from CoLab internal system
-      if (isColabInternal && prolificPid && studyId && sessionId) {
-        console.log('[CoLab Access] Allowing internal access')
-        // Continue to registration below
-      } else {
-        // Fallback path — no Prolific params on this page load.
-        // Re-entry case (e.g. "View experiment again" from results screen): we want
-        // the student to see their results even if sessionStorage was wiped (closed
-        // tab, different browser session, etc.). Check localStorage as the more
-        // durable secondary cache; if it has a participantId, treat the visit as
-        // a results-only re-entry and skip the gate.
-        const storedSession = sessionStorage.getItem('participantId')
-        const storedLocal = localStorage.getItem('participantId')
-        const storedParticipantId = storedSession || storedLocal
-        if (storedParticipantId) {
-          // Mirror to sessionStorage so the rest of the app keeps working unchanged.
-          if (!storedSession) sessionStorage.setItem('participantId', storedLocal!)
-          setParticipantId(storedParticipantId)
-          setAccessAllowed(true)
-          setIsCheckingAccess(false)
-          return
-        }
-
-        console.log('[Auth] No session found, redirecting to login')
-        router.push('/auth')
-        return
-      }
+    // Open access: no login and no Prolific gate. Every visitor gets a locally
+    // generated anonymous id; we still register it with the backend (best
+    // effort) so phase data uploads keep working.
+    const finish = (id: string, pid: string) => {
+      if (cancelled) return
+      sessionStorage.setItem('participantId', id)
+      sessionStorage.setItem('prolificPid', pid)
+      localStorage.setItem('participantId', id)
+      setParticipantId(id)
+      setAccessAllowed(true)
+      setIsCheckingAccess(false)
     }
 
-    /*
-    // TEST MODE: Allow access without Prolific parameters
-    console.log('[TEST MODE] Access allowed for everyone')
-    */
+    const freshPid = () => {
+      const pid = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      localStorage.setItem('localProlificPid', pid)
+      localStorage.removeItem('participantId')
+      sessionStorage.removeItem('participantId')
+      return pid
+    }
 
+    ;(async () => {
+      let pid = localStorage.getItem('localProlificPid') || freshPid()
+      setProlificParams({ prolificPid: pid, studyId: 'local-site', sessionId: 'local' })
 
-    console.log('[Access Check] Parameters valid, proceeding with registration...')
+      try {
+        let status = await api.checkParticipant(pid)
 
-    // TEMPORARILY DISABLED FOR TESTING: Always verify with backend first to prevent duplicate participants
-    // TODO: Re-enable before production launch
-    // Check participant status (with caching)
-    api.checkParticipant(prolificPid)
-      .then((participantStatus) => {
-        if (cancelled) return
-
-        // TEST MODE: Allow re-entry even if completed
-        /*
-        if (participantStatus.exists && participantStatus.completed) {
-          // Clear localStorage if participant completed
-          localStorage.removeItem('participantId')
-          localStorage.removeItem('prolificPid')
-          setAccessAllowed(false)
-          setShowCompletedMessage(true)
-          setIsCheckingAccess(false)
-          return
+        // Finished a previous run? Start a fresh anonymous one.
+        if (status.exists && status.completed) {
+          pid = freshPid()
+          status = await api.checkParticipant(pid)
         }
-        */
 
-        if (participantStatus.exists && !participantStatus.completed && participantStatus.participantId) {
-          // Use backend's participantId (always authoritative)
-          const backendParticipantId = participantStatus.participantId
-
-          // Check if cached participantId matches backend
-          const cachedParticipantId = sessionStorage.getItem('participantId')
-          if (cachedParticipantId !== backendParticipantId) {
-            // Mismatch: clear cache and use backend's ID
-            console.warn(`[Participant Mismatch] Cached: ${cachedParticipantId}, Backend: ${backendParticipantId}. Using backend ID.`)
-            sessionStorage.removeItem('participantId')
-            sessionStorage.removeItem('prolificPid')
-          }
-
-          setParticipantId(backendParticipantId)
-          sessionStorage.setItem('participantId', backendParticipantId)
-          sessionStorage.setItem('prolificPid', prolificPid)
-          localStorage.setItem('participantId', backendParticipantId)
-
-          // Resume: skip ahead to the next phase the student hasn't finished.
-          // Map completedPhases (0..5) to the phase id they should land on.
-          // 0 = nothing done (intro), 1 = practice done (training2), etc.
-          const completed = participantStatus.completedPhases || 0
+        if (status.exists && status.participantId) {
+          // Resume an unfinished run at the first incomplete phase.
+          const completed = status.completedPhases || 0
           const resumePhase = (
             completed === 0 ? 'intro' :
             completed === 1 ? 'training2' :
@@ -192,71 +108,31 @@ export default function KnapsackExperiment() {
             completed === 3 ? 'prediction' :
             'results'
           )
-          if (resumePhase !== 'intro') {
+          if (resumePhase !== 'intro' && !cancelled) {
             console.log(`[Resume] ${completed} phase(s) already done; jumping to "${resumePhase}"`)
             setCurrentPhase(resumePhase)
           }
-
-          setAccessAllowed(true)
-          setIsCheckingAccess(false)
+          finish(status.participantId, pid)
           return
         }
 
-        // Register new participant if doesn't exist
-        if (!participantStatus.exists && studyId && sessionId) {
-          return api.registerProlific(prolificPid, studyId, sessionId)
-            .then((data) => {
-              if (cancelled) return
-              const id = data.participantId
-
-              // Clear any old cached data before setting new
-              sessionStorage.removeItem('participantId')
-              sessionStorage.removeItem('prolificPid')
-
-              setParticipantId(id)
-              sessionStorage.setItem('participantId', id)
-              sessionStorage.setItem('prolificPid', prolificPid)
-              localStorage.setItem('participantId', id)
-              setAccessAllowed(true)
-              setIsCheckingAccess(false)
-            })
-            .catch((registerError: any) => {
-              if (cancelled) return
-              console.error('[Registration Error]', registerError)
-
-              // If registration fails, try checking again (might have been created by another request)
-              return api.checkParticipant(prolificPid)
-                .then((retryStatus) => {
-                  if (cancelled) return
-                  if (retryStatus.exists && retryStatus.participantId) {
-                    setParticipantId(retryStatus.participantId)
-                    sessionStorage.setItem('participantId', retryStatus.participantId)
-                    sessionStorage.setItem('prolificPid', prolificPid)
-                    localStorage.setItem('participantId', retryStatus.participantId)
-                    setAccessAllowed(true)
-                    setIsCheckingAccess(false)
-                  } else {
-                    setAccessAllowed(false)
-                    setIsCheckingAccess(false)
-                  }
-                })
-            })
+        const data = await api.registerProlific(pid, 'local-site', 'local')
+        finish(data.participantId, pid)
+      } catch (error: any) {
+        // A pid the backend refuses to resume (e.g. already completed) gets a
+        // fresh anonymous run; anything else falls back to a purely local id.
+        if (String(error?.message || '').includes('already completed')) {
+          try {
+            const pid2 = freshPid()
+            const data = await api.registerProlific(pid2, 'local-site', 'local')
+            finish(data.participantId, pid2)
+            return
+          } catch { /* fall through to offline mode */ }
         }
-
-        setAccessAllowed(false)
-        setIsCheckingAccess(false)
-      })
-      .catch((error) => {
-        if (cancelled) return
-
-        console.error('[Check Participant Error]', error)
-
-        if (error.message?.includes('already completed')) {
-          setShowCompletedMessage(true)
-        }
-        setAccessAllowed(false)
-        setIsCheckingAccess(false)
-      })
+        console.warn('[Access] Backend unavailable, continuing locally:', error)
+        finish(`offline-${pid}`, pid)
+      }
+    })()
 
     return () => {
       cancelled = true
@@ -331,9 +207,9 @@ export default function KnapsackExperiment() {
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent"></div>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">Verifying Access</h1>
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">Preparing the Experiment</h1>
             <p className="text-gray-600">
-              Checking your Prolific credentials and study status...
+              Setting up your session...
             </p>
           </div>
         </div>

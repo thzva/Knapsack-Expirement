@@ -14,6 +14,7 @@ interface ResultsPhaseProps {
 
 export default function ResultsPhase({ onNext, participantData }: ResultsPhaseProps) {
   const [isCompleting, setIsCompleting] = useState(false)
+  const [finished, setFinished] = useState(false)
   // Pending-phase replay state. Keeps the user from clicking "Complete" until
   // every phase that failed to upload during the test has been retried at
   // least once on this screen.
@@ -112,9 +113,8 @@ export default function ResultsPhase({ onNext, participantData }: ResultsPhasePr
     } finally {
       sessionStorage.removeItem('participantId')
       sessionStorage.removeItem('prolificPid')
-      
-      // Redirect back to CoLab questionnaire page
-      window.location.href = window.location.origin + '/colab/#/user/questionnaires'
+      setIsCompleting(false)
+      setFinished(true)
     }
   }
 
@@ -225,20 +225,33 @@ export default function ResultsPhase({ onNext, participantData }: ResultsPhasePr
 
       {/* Complete Study Section */}
       <div className="text-center pt-8 border-t border-gray-200">
-        <Button
-          onClick={completeProlificStudy}
-          disabled={isCompleting || pendingReplay.status === 'replaying' || pendingReplay.status === 'still-failing'}
-          size="lg"
-          className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-8 py-5 rounded-2xl font-bold shadow-xl text-xl w-full max-w-lg transform hover:scale-[1.02] transition-all disabled:opacity-50"
-        >
-          {isCompleting ? "Saving results..."
-            : pendingReplay.status === 'replaying' ? "Uploading pending data…"
-            : pendingReplay.status === 'still-failing' ? "Resolve pending uploads to continue"
-            : "Complete & Return to Questionnaires"}
-        </Button>
-        <p className="text-sm text-gray-500 mt-4">
-          Clicking this will save your results and return you to the questionnaire page.
-        </p>
+        {finished ? (
+          <div className="max-w-lg mx-auto bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6">
+            <div className="flex items-center justify-center gap-2 text-emerald-700 text-xl font-bold mb-2">
+              <Sparkles className="h-6 w-6" /> All done!
+            </div>
+            <p className="text-emerald-800">
+              Your results have been saved. Thank you for participating — you may now close this page.
+            </p>
+          </div>
+        ) : (
+          <>
+            <Button
+              onClick={completeProlificStudy}
+              disabled={isCompleting || pendingReplay.status === 'replaying' || pendingReplay.status === 'still-failing'}
+              size="lg"
+              className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-8 py-5 rounded-2xl font-bold shadow-xl text-xl w-full max-w-lg transform hover:scale-[1.02] transition-all disabled:opacity-50"
+            >
+              {isCompleting ? "Saving results..."
+                : pendingReplay.status === 'replaying' ? "Uploading pending data…"
+                : pendingReplay.status === 'still-failing' ? "Resolve pending uploads to continue"
+                : "Complete Experiment"}
+            </Button>
+            <p className="text-sm text-gray-500 mt-4">
+              Clicking this will save your results and finish the experiment.
+            </p>
+          </>
+        )}
       </div>
     </div>
   )
