@@ -5,6 +5,15 @@ import Link from "next/link"
 import staticQuestions from "@/lib/static-questions.json"
 import type { Question } from "@/lib/static-loader"
 import { analyzeQuestion, rebuildQuestion, type Ball } from "@/lib/question-editing"
+import {
+  emptyAssignments,
+  loadAssignments,
+  saveAssignments,
+  TEST_KEYS,
+  TEST_LABELS,
+  type Assignments,
+  type TestKey,
+} from "@/lib/experiment-selection"
 import KnapsackQuestion from "@/components/knapsack-question"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -80,6 +89,8 @@ function saveOverrides(overrides: Record<number, Question>) {
 
 export default function QuestionManager() {
   const [overrides, setOverrides] = useState<Record<number, Question>>({})
+  const [assignments, setAssignments] = useState<Assignments>(emptyAssignments())
+  const [checked, setChecked] = useState<Set<number>>(new Set())
   const [loaded, setLoaded] = useState(false)
 
   // Filters
@@ -97,6 +108,7 @@ export default function QuestionManager() {
 
   useEffect(() => {
     setOverrides(loadOverrides())
+    setAssignments(loadAssignments())
     setLoaded(true)
   }, [])
 
@@ -140,6 +152,57 @@ export default function QuestionManager() {
     setPage(0)
   }
 
+  // ----- Test page assignment -----
+
+  const assignedTestsById = useMemo(() => {
+    const map = new Map<number, TestKey[]>()
+    for (const key of TEST_KEYS) {
+      for (const id of assignments[key]) {
+        map.set(id, [...(map.get(id) ?? []), key])
+      }
+    }
+    return map
+  }, [assignments])
+
+  const updateAssignments = (next: Assignments) => {
+    setAssignments(next)
+    saveAssignments(next)
+  }
+
+  const toggleChecked = (id: number) => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allPageChecked = pageItems.length > 0 && pageItems.every((q) => checked.has(q.id))
+  const togglePageChecked = () => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (allPageChecked) pageItems.forEach((q) => next.delete(q.id))
+      else pageItems.forEach((q) => next.add(q.id))
+      return next
+    })
+  }
+
+  const assignChecked = (test: TestKey) => {
+    const existing = new Set(assignments[test])
+    const additions = sorted.filter((q) => checked.has(q.id) && !existing.has(q.id)).map((q) => q.id)
+    updateAssignments({ ...assignments, [test]: [...assignments[test], ...additions] })
+    setChecked(new Set())
+  }
+
+  const removeFromTest = (test: TestKey, id: number) => {
+    updateAssignments({ ...assignments, [test]: assignments[test].filter((x) => x !== id) })
+  }
+
+  const clearTest = (test: TestKey) => {
+    updateAssignments({ ...assignments, [test]: [] })
+  }
+
   const updateOverride = (q: Question) => {
     const next = { ...overrides, [q.id]: q }
     setOverrides(next)
@@ -176,6 +239,7 @@ export default function QuestionManager() {
         statistics,
         editedAt: new Date().toISOString(),
         editedQuestions: Object.keys(overrides).map(Number).sort((a, b) => a - b),
+        testAssignments: assignments,
       },
       questions: merged,
     }
@@ -312,12 +376,105 @@ export default function QuestionManager() {
           </CardContent>
         </Card>
 
+        {/* Test page assignment */}
+        <Card className="mb-6">
+          <CardContent className="p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+              <h2 className="font-semibold text-gray-900">Test Page Assignment</h2>
+              <p className="text-xs text-gray-500">
+                Tests with assigned questions use exactly those questions, in this order.
+                Empty tests fall back to random sampling. Saved automatically in this browser.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              {TEST_KEYS.map((test) => (
+                <div key={test} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-900">{TEST_LABELS[test]}</span>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-gray-600">
+                        {assignments[test].length}
+                      </Badge>
+                      {assignments[test].length > 0 && (
+                        <button
+                          onClick={() => clearTest(test)}
+                          className="text-xs text-rose-600 hover:underline"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {assignments[test].length === 0 ? (
+                    <p className="text-xs text-gray-400">Random sampling (default)</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                      {assignments[test].map((id) => (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-xs text-gray-700"
+                        >
+                          <button className="hover:text-blue-700" onClick={() => setSelectedId(id)}>
+                            #{id}
+                          </button>
+                          <button
+                            className="text-gray-400 hover:text-rose-600"
+                            onClick={() => removeFromTest(test, id)}
+                            title="Remove from this test"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Bulk assign bar */}
+        {checked.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <span className="text-sm font-medium text-blue-900">
+              {checked.size} selected — add to:
+            </span>
+            {TEST_KEYS.map((test) => (
+              <Button
+                key={test}
+                size="sm"
+                variant="outline"
+                className="bg-white"
+                onClick={() => assignChecked(test)}
+              >
+                {TEST_LABELS[test]}
+              </Button>
+            ))}
+            <button
+              onClick={() => setChecked(new Set())}
+              className="text-sm text-gray-500 hover:underline ml-auto"
+            >
+              Clear selection
+            </button>
+          </div>
+        )}
+
         {/* Question table */}
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500">
+                  <th className="pl-4 pr-1 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allPageChecked}
+                      onChange={togglePageChecked}
+                      className="h-4 w-4 accent-blue-700 align-middle"
+                      title="Select all on this page"
+                    />
+                  </th>
                   <SortHeader label="ID" active={sortKey === "id"} dir={sortDir} onClick={() => toggleSort("id")} />
                   <th className="px-4 py-3 font-medium">Phase</th>
                   <SortHeader label="Difficulty" active={sortKey === "difficulty"} dir={sortDir} onClick={() => toggleSort("difficulty")} />
@@ -331,7 +488,7 @@ export default function QuestionManager() {
               <tbody>
                 {pageItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-16 text-center text-gray-500">
+                    <td colSpan={9} className="px-4 py-16 text-center text-gray-500">
                       No questions match the current filters.
                     </td>
                   </tr>
@@ -342,6 +499,14 @@ export default function QuestionManager() {
                       className="border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer"
                       onClick={() => setSelectedId(q.id)}
                     >
+                      <td className="pl-4 pr-1 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={checked.has(q.id)}
+                          onChange={() => toggleChecked(q.id)}
+                          className="h-4 w-4 accent-blue-700 align-middle"
+                        />
+                      </td>
                       <td className="px-4 py-3 font-semibold text-gray-900">#{q.id}</td>
                       <td className="px-4 py-3">
                         <Badge variant="outline" className={`capitalize ${phaseStyles[q.phase ?? ""] ?? ""}`}>
@@ -369,11 +534,23 @@ export default function QuestionManager() {
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900">{optimalPoints(q)} pts</td>
                       <td className="px-4 py-3">
-                        {overrides[q.id] ? (
-                          <Badge className="bg-blue-700 text-white">edited</Badge>
-                        ) : (
-                          <span className="text-gray-400">original</span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1">
+                          {overrides[q.id] ? (
+                            <Badge className="bg-blue-700 text-white">edited</Badge>
+                          ) : (
+                            <span className="text-gray-400">original</span>
+                          )}
+                          {(assignedTestsById.get(q.id) ?? []).map((test) => (
+                            <Badge
+                              key={test}
+                              variant="outline"
+                              className="text-[10px] px-1.5 bg-emerald-50 text-emerald-700 border-emerald-300"
+                              title={`Assigned to ${TEST_LABELS[test]}`}
+                            >
+                              {test === "practice" ? "P" : test === "training2" ? "T1" : test === "benchmark" ? "T2" : "T3"}
+                            </Badge>
+                          ))}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Button

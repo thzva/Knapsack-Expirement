@@ -6,6 +6,7 @@
 
 import staticQuestions from './static-questions.json';
 import { NUM_BALLS } from './config';
+import { getAssignedQuestions, withOverrides } from './experiment-selection';
 
 export interface Ball {
   id: number;
@@ -147,6 +148,10 @@ function randomizeQuestionOrder(
  * Get practice questions (hardcoded 6 questions: 2 easy + 2 medium + 2 hard)
  */
 export function getPracticeQuestions(): Question[] {
+  // Curated set from the Question Bank Manager takes precedence.
+  const assigned = getAssignedQuestions('practice') as Question[] | null;
+  if (assigned) return assigned;
+
   const questions = loadQuestionsForPhase('training');
 
   // We want EXACTLY 6 total questions: 2 Easy, 2 Medium, 2 Hard
@@ -156,11 +161,11 @@ export function getPracticeQuestions(): Question[] {
 
   const practiceHard = shuffle(questions.hard).slice(0, 2);
 
-  return shuffle([
+  return withOverrides(shuffle([
     ...practiceEasy,
     ...practiceMedium,
     ...practiceHard
-  ]);
+  ]));
 }
 
 /**
@@ -168,6 +173,10 @@ export function getPracticeQuestions(): Question[] {
  * Questions are GROUPED by difficulty (easy first, then medium, then hard)
  */
 export function getSkillTestQuestions(): Question[] {
+  // Curated set from the Question Bank Manager takes precedence.
+  const assigned = getAssignedQuestions('training2') as Question[] | null;
+  if (assigned) return assigned;
+
   const questions = loadQuestionsForPhase('training');
 
   // Shuffle within each difficulty group, but keep groups separate
@@ -176,11 +185,11 @@ export function getSkillTestQuestions(): Question[] {
   const shuffledHard = shuffle(questions.hard);
 
   // Return in order: all easy, then all medium, then all hard
-  return [
+  return withOverrides([
     ...shuffledEasy.slice(0, 3),
     ...shuffledMedium.slice(0, 4),
     ...shuffledHard.slice(0, 3)
-  ];
+  ]);
 }
 
 /**
@@ -192,24 +201,32 @@ export function getSkillTestQuestions(): Question[] {
  * Uniformly sampled from ALL available benchmark questions (approx 300)
  */
 export function getBenchmarkPhaseQuestions(participantId?: string | null): Question[] {
+  // Curated set from the Question Bank Manager takes precedence.
+  const assigned = getAssignedQuestions('benchmark') as Question[] | null;
+  if (assigned) return assigned;
+
   const allQuestions = (staticQuestions.questions as Question[]).filter(
     (q) => q.phase === 'benchmark' && q.balls.length === NUM_BALLS
   );
   // Seed with participantId so a refresh returns the SAME 30 questions —
   // otherwise already-confirmed answer keys wouldn't match the new shuffle.
   const seed = seedFor(participantId, 'benchmark');
-  return shuffle(allQuestions, seed).slice(0, 30);
+  return withOverrides(shuffle(allQuestions, seed).slice(0, 30));
 }
 
 /**
  * Get questions for Final Test (Test 3): 30 deterministic-per-participant questions
  */
 export function getPredictionPhaseQuestions(participantId?: string | null): Question[] {
+  // Curated set from the Question Bank Manager takes precedence.
+  const assigned = getAssignedQuestions('prediction') as Question[] | null;
+  if (assigned) return assigned;
+
   const allQuestions = (staticQuestions.questions as Question[]).filter(
     (q) => q.phase === 'prediction' && q.balls.length === NUM_BALLS
   );
   const seed = seedFor(participantId, 'prediction');
-  return shuffle(allQuestions, seed).slice(0, 30);
+  return withOverrides(shuffle(allQuestions, seed).slice(0, 30));
 }
 
 /**
