@@ -85,10 +85,18 @@ export default function KnapsackExperiment() {
       return pid
     }
 
-    ;(async () => {
-      let pid = localStorage.getItem('localProlificPid') || freshPid()
-      setProlificParams({ prolificPid: pid, studyId: 'local-site', sessionId: 'local' })
+    // Enter IMMEDIATELY with a provisional local id — never make the visitor
+    // wait for the backend (a Render cold start can take up to a minute).
+    // Registration/resume happens in the background and upgrades the id.
+    let pid = localStorage.getItem('localProlificPid') || freshPid()
+    setProlificParams({ prolificPid: pid, studyId: 'local-site', sessionId: 'local' })
+    const provisionalId =
+      sessionStorage.getItem('participantId') ||
+      localStorage.getItem('participantId') ||
+      `offline-${pid}`
+    finish(provisionalId, pid)
 
+    ;(async () => {
       try {
         let status = await api.checkParticipant(pid)
 
@@ -99,7 +107,8 @@ export default function KnapsackExperiment() {
         }
 
         if (status.exists && status.participantId) {
-          // Resume an unfinished run at the first incomplete phase.
+          // Resume an unfinished run at the first incomplete phase — but only
+          // jump if the visitor is still on the intro screen.
           const completed = status.completedPhases || 0
           const resumePhase = (
             completed === 0 ? 'intro' :
@@ -110,7 +119,7 @@ export default function KnapsackExperiment() {
           )
           if (resumePhase !== 'intro' && !cancelled) {
             console.log(`[Resume] ${completed} phase(s) already done; jumping to "${resumePhase}"`)
-            setCurrentPhase(resumePhase)
+            setCurrentPhase((prev) => (prev === 'intro' ? resumePhase : prev))
           }
           finish(status.participantId, pid)
           return
@@ -120,17 +129,16 @@ export default function KnapsackExperiment() {
         finish(data.participantId, pid)
       } catch (error: any) {
         // A pid the backend refuses to resume (e.g. already completed) gets a
-        // fresh anonymous run; anything else falls back to a purely local id.
+        // fresh anonymous run; anything else keeps the provisional local id.
         if (String(error?.message || '').includes('already completed')) {
           try {
             const pid2 = freshPid()
             const data = await api.registerProlific(pid2, 'local-site', 'local')
             finish(data.participantId, pid2)
             return
-          } catch { /* fall through to offline mode */ }
+          } catch { /* keep the provisional id */ }
         }
         console.warn('[Access] Backend unavailable, continuing locally:', error)
-        finish(`offline-${pid}`, pid)
       }
     })()
 

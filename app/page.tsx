@@ -1,9 +1,17 @@
 "use client"
 
+import { useEffect } from "react"
 import Link from "next/link"
 import { ArrowRight, ClipboardList, Database } from "lucide-react"
 
 export default function HomePage() {
+  // Wake the Render backend (free tier sleeps when idle, cold start can take
+  // up to a minute) while the visitor is still choosing where to go.
+  useEffect(() => {
+    const base = process.env.NEXT_PUBLIC_API_BASE
+    if (base) fetch(`${base}/`, { mode: "no-cors" }).catch(() => {})
+  }, [])
+
   return (
     <div className="min-h-screen bg-white flex flex-col">
       {/* Top navigation */}
