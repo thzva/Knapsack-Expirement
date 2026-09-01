@@ -150,8 +150,13 @@ export default function QuestionManager() {
       sortKey === "capacity" ? q.capacity :
       sortKey === "optimal" ? optimalPoints(q) :
       rank[q.difficulty ?? ""] ?? 3
-    return [...list].sort((a, b) => (val(a) - val(b)) * sortDir || a.id - b.id)
-  }, [questions, phaseFilter, difficulty, search, sortKey, sortDir])
+    // Edited questions float to the top of their difficulty category.
+    return [...list].sort((a, b) => {
+      const editedFirst = (overrides[a.id] ? 0 : 1) - (overrides[b.id] ? 0 : 1)
+      if (editedFirst !== 0) return editedFirst
+      return (val(a) - val(b)) * sortDir || a.id - b.id
+    })
+  }, [questions, phaseFilter, difficulty, search, sortKey, sortDir, overrides])
 
   const pageCount = Math.max(1, Math.ceil(bankList.length / pageSize))
   const safePage = Math.min(page, pageCount - 1)
@@ -642,7 +647,11 @@ function QuestionTable({
             rows.map((q, i) => (
               <tr
                 key={q.id}
-                className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+                className={`border-b border-gray-100 cursor-pointer ${
+                  overrides[q.id]
+                    ? "bg-slate-100 hover:bg-slate-200"
+                    : "hover:bg-gray-50"
+                }`}
                 onClick={() => onEdit(q.id)}
               >
                 {showOrder && <td className="px-4 py-3 text-gray-400">{i + 1}</td>}
@@ -708,18 +717,23 @@ function QuestionEditor({
 }) {
   const [capacity, setCapacity] = useState(current.capacity)
   const [balls, setBalls] = useState<Ball[]>(current.balls.map((b) => ({ ...b })))
+  const [difficulty, setDifficulty] = useState<Difficulty>(
+    (current.difficulty as Difficulty) ?? "easy",
+  )
   const [showSolution, setShowSolution] = useState(false)
   const [previewKey, setPreviewKey] = useState(0)
   const [savedFlash, setSavedFlash] = useState(false)
 
   const analysis = useMemo(() => analyzeQuestion(balls, capacity), [balls, capacity])
+  // The difficulty selector always wins over the auto-classification.
   const draft = useMemo(
-    () => rebuildQuestion(current, balls, capacity),
-    [current, balls, capacity],
+    () => ({ ...rebuildQuestion(current, balls, capacity), difficulty }),
+    [current, balls, capacity, difficulty],
   )
 
   const dirty =
     capacity !== current.capacity ||
+    difficulty !== current.difficulty ||
     JSON.stringify(balls) !== JSON.stringify(current.balls)
 
   const setBallField = (id: number, field: "weight" | "reward", value: number) => {
@@ -738,6 +752,7 @@ function QuestionEditor({
     onRevert()
     setCapacity(original.capacity)
     setBalls(original.balls.map((b) => ({ ...b })))
+    setDifficulty((original.difficulty as Difficulty) ?? "easy")
     setPreviewKey((k) => k + 1)
   }
 
@@ -772,17 +787,42 @@ function QuestionEditor({
               <CardContent className="p-5">
                 <h2 className="font-semibold text-gray-900 mb-4">Edit Parameters</h2>
 
-                <div className="mb-5">
-                  <label className="text-sm font-medium text-gray-600 block mb-1">
-                    Knapsack Capacity
-                  </label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={capacity}
-                    onChange={(e) => setCapacity(Math.max(1, Math.round(Number(e.target.value)) || 1))}
-                    className="w-32 text-lg font-bold"
-                  />
+                <div className="flex flex-wrap gap-6 mb-5">
+                  <div>
+                    <label className="text-sm font-medium text-gray-600 block mb-1">
+                      Knapsack Capacity
+                    </label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={capacity}
+                      onChange={(e) => setCapacity(Math.max(1, Math.round(Number(e.target.value)) || 1))}
+                      className="w-32 text-lg font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-600 block mb-1">
+                      Difficulty
+                    </label>
+                    <select
+                      value={difficulty}
+                      onChange={(e) => setDifficulty(e.target.value as Difficulty)}
+                      className="border border-gray-200 rounded-md px-3 h-10 text-sm bg-white capitalize"
+                    >
+                      <option value="easy">Easy</option>
+                      <option value="medium">Medium</option>
+                      <option value="hard">Hard</option>
+                    </select>
+                    {analysis.computedDifficulty !== "invalid" &&
+                      analysis.computedDifficulty !== difficulty && (
+                        <button
+                          className="block text-xs text-blue-700 hover:underline mt-1 capitalize"
+                          onClick={() => setDifficulty(analysis.computedDifficulty as Difficulty)}
+                        >
+                          Use computed: {analysis.computedDifficulty}
+                        </button>
+                      )}
+                  </div>
                 </div>
 
                 <table className="w-full text-sm">

@@ -81,9 +81,11 @@ export function seedFor(participantId: string | null | undefined, phase: string)
  * Load questions for a specific phase and difficulty
  */
 function loadQuestionsForPhase(phase: 'training' | 'benchmark' | 'prediction'): QuestionSet {
-  const phaseQuestions = (staticQuestions.questions as Question[]).filter(
+  // Apply manager edits BEFORE difficulty bucketing, so an edited difficulty
+  // moves the question into the right sampling bucket.
+  const phaseQuestions = withOverrides((staticQuestions.questions as Question[]).filter(
     (q) => q.phase === phase && q.balls.length === NUM_BALLS
-  );
+  ));
 
   return {
     easy: phaseQuestions.filter(q => q.difficulty === 'easy'),
