@@ -9,8 +9,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  output: 'export',                // 👈 important: tells Next to generate static HTML
-  basePath: '/colab/knapsack-app' // 👈 matches deployment path
+  output: 'export',  // 👈 important: tells Next to generate static HTML
+  basePath: ''       // 👈 custom domain knapsack.zhou-yufan.com serves from the root
 }
 
 export default nextConfig
