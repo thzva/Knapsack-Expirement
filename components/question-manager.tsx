@@ -109,6 +109,13 @@ export default function QuestionManager() {
   // Editor
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
+  // Transient "Saved" indicator — everything persists automatically.
+  const [savedFlash, setSavedFlash] = useState(false)
+  const flashSaved = () => {
+    setSavedFlash(true)
+    window.setTimeout(() => setSavedFlash(false), 1200)
+  }
+
   useEffect(() => {
     setOverrides(loadOverrides())
     setExclusions(loadExclusions())
@@ -169,6 +176,7 @@ export default function QuestionManager() {
   const updateExclusions = (next: Exclusions) => {
     setExclusions(next)
     saveExclusions(next)
+    flashSaved()
   }
 
   const excludeFromTask = (id: number) => {
@@ -190,6 +198,7 @@ export default function QuestionManager() {
     const next = { ...overrides, [q.id]: q }
     setOverrides(next)
     saveOverrides(next)
+    flashSaved()
   }
 
   const removeOverride = (id: number) => {
@@ -359,6 +368,13 @@ export default function QuestionManager() {
                   · {exclusions[task].length} excluded from the random draw
                 </span>
               )}
+              <span
+                className={`ml-2 text-xs font-medium text-emerald-600 transition-opacity duration-300 ${
+                  savedFlash ? "opacity-100" : "opacity-0"
+                }`}
+              >
+                Saved ✓
+              </span>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex rounded-md border border-gray-200 overflow-hidden">
@@ -406,36 +422,8 @@ export default function QuestionManager() {
             sortDir={sortDir}
             onSort={toggleSort}
             onEdit={(id) => setSelectedId(id)}
-            mutedIds={excludedSet}
-            actionFor={(q) =>
-              excludedSet.has(q.id) ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-gray-500 border-gray-300 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
-                  title="Not in the random draw for this test — click to put it back"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    restoreToTask(q.id)
-                  }}
-                >
-                  Excluded
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-emerald-700 border-emerald-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300"
-                  title="In the random draw for this test — click to exclude it"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    excludeFromTask(q.id)
-                  }}
-                >
-                  In pool
-                </Button>
-              )
-            }
+            excludedIds={excludedSet}
+            onPoolToggle={(id, inPool) => (inPool ? restoreToTask(id) : excludeFromTask(id))}
           />
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
                 <span className="text-sm text-gray-500">
@@ -502,8 +490,8 @@ function QuestionTable({
   sortDir,
   onSort,
   onEdit,
-  mutedIds,
-  actionFor,
+  excludedIds,
+  onPoolToggle,
 }: {
   rows: Question[]
   overrides: Record<number, Question>
@@ -512,8 +500,8 @@ function QuestionTable({
   sortDir?: 1 | -1
   onSort?: (k: "id" | "capacity" | "optimal" | "difficulty") => void
   onEdit: (id: number) => void
-  mutedIds?: Set<number>
-  actionFor: (q: Question) => React.ReactNode
+  excludedIds?: Set<number>
+  onPoolToggle?: (id: number, inPool: boolean) => void
 }) {
   const sortable = Boolean(onSort)
   const header = (label: string, key?: "id" | "capacity" | "optimal" | "difficulty") =>
@@ -547,6 +535,7 @@ function QuestionTable({
             {header("Capacity", "capacity")}
             <th className="px-4 py-3 font-medium">Items (weight / points)</th>
             {header("Optimal", "optimal")}
+            <th className="px-4 py-3 font-medium">In Pool</th>
             <th className="px-4 py-3 font-medium">Status</th>
             <th className="px-4 py-3 font-medium text-right">Actions</th>
           </tr>
@@ -554,7 +543,7 @@ function QuestionTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={showOrder ? 9 : 8} className="px-4 py-16 text-center text-gray-500">
+              <td colSpan={showOrder ? 10 : 9} className="px-4 py-16 text-center text-gray-500">
                 No questions to show.
               </td>
             </tr>
@@ -566,7 +555,7 @@ function QuestionTable({
                   overrides[q.id]
                     ? "bg-slate-100 hover:bg-slate-200"
                     : "hover:bg-gray-50"
-                } ${mutedIds?.has(q.id) ? "opacity-50" : ""}`}
+                } ${excludedIds?.has(q.id) ? "opacity-50" : ""}`}
                 onClick={() => onEdit(q.id)}
               >
                 {showOrder && <td className="px-4 py-3 text-gray-400">{i + 1}</td>}
@@ -580,6 +569,19 @@ function QuestionTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-900">{optimalPoints(q)}</td>
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={!excludedIds?.has(q.id)}
+                    onChange={(e) => onPoolToggle?.(q.id, e.target.checked)}
+                    className="h-4 w-4 accent-blue-700 align-middle cursor-pointer"
+                    title={
+                      excludedIds?.has(q.id)
+                        ? "Excluded from this test's random draw — tick to put it back"
+                        : "In this test's random draw — untick to exclude it"
+                    }
+                  />
+                </td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-2">
                     {overrides[q.id] ? (
@@ -590,11 +592,10 @@ function QuestionTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <div className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="inline-flex items-center" onClick={(e) => e.stopPropagation()}>
                     <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onEdit(q.id)}>
                       <Pencil className="h-3.5 w-3.5" /> Edit
                     </Button>
-                    {actionFor(q)}
                   </div>
                 </td>
               </tr>
