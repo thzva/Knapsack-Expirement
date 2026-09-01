@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import {
   ArrowLeft,
+  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -87,7 +88,9 @@ export default function QuestionManager() {
   const [editedOnly, setEditedOnly] = useState(false)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
-  const PAGE_SIZE = 24
+  const [pageSize, setPageSize] = useState(20)
+  const [sortKey, setSortKey] = useState<"id" | "capacity" | "optimal" | "difficulty">("id")
+  const [sortDir, setSortDir] = useState<1 | -1>(1)
 
   // Editor
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -112,10 +115,30 @@ export default function QuestionManager() {
     return list
   }, [questions, phaseFilter, difficultyFilter, editedOnly, search, overrides])
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const sorted = useMemo(() => {
+    const rank: Record<string, number> = { easy: 0, medium: 1, hard: 2 }
+    const val = (q: Question) =>
+      sortKey === "id" ? q.id :
+      sortKey === "capacity" ? q.capacity :
+      sortKey === "optimal" ? optimalPoints(q) :
+      rank[q.difficulty ?? ""] ?? 3
+    return [...filtered].sort((a, b) => (val(a) - val(b)) * sortDir || a.id - b.id)
+  }, [filtered, sortKey, sortDir])
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
   const safePage = Math.min(page, pageCount - 1)
-  const pageItems = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+  const pageItems = sorted.slice(safePage * pageSize, (safePage + 1) * pageSize)
   const editedCount = Object.keys(overrides).length
+
+  const toggleSort = (key: typeof sortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 1 ? -1 : 1))
+    } else {
+      setSortKey(key)
+      setSortDir(1)
+    }
+    setPage(0)
+  }
 
   const updateOverride = (q: Question) => {
     const next = { ...overrides, [q.id]: q }
@@ -177,7 +200,7 @@ export default function QuestionManager() {
     const original = data.questions.find((q) => q.id === selectedId)
     const current = questions.find((q) => q.id === selectedId)
     if (original && current) {
-      const idx = filtered.findIndex((q) => q.id === selectedId)
+      const idx = sorted.findIndex((q) => q.id === selectedId)
       return (
         <QuestionEditor
           key={selectedId}
@@ -187,10 +210,10 @@ export default function QuestionManager() {
           onBack={() => setSelectedId(null)}
           onSave={updateOverride}
           onRevert={() => removeOverride(selectedId)}
-          onPrev={idx > 0 ? () => setSelectedId(filtered[idx - 1].id) : undefined}
+          onPrev={idx > 0 ? () => setSelectedId(sorted[idx - 1].id) : undefined}
           onNext={
-            idx >= 0 && idx < filtered.length - 1
-              ? () => setSelectedId(filtered[idx + 1].id)
+            idx >= 0 && idx < sorted.length - 1
+              ? () => setSelectedId(sorted[idx + 1].id)
               : undefined
           }
         />
@@ -289,46 +312,135 @@ export default function QuestionManager() {
           </CardContent>
         </Card>
 
-        {/* Question grid */}
-        {pageItems.length === 0 ? (
-          <div className="text-center text-gray-500 py-16">No questions match the current filters.</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {pageItems.map((q) => (
-              <QuestionCard
-                key={q.id}
-                question={q}
-                edited={Boolean(overrides[q.id])}
-                onClick={() => setSelectedId(q.id)}
-              />
-            ))}
+        {/* Question table */}
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500">
+                  <SortHeader label="ID" active={sortKey === "id"} dir={sortDir} onClick={() => toggleSort("id")} />
+                  <th className="px-4 py-3 font-medium">Phase</th>
+                  <SortHeader label="Difficulty" active={sortKey === "difficulty"} dir={sortDir} onClick={() => toggleSort("difficulty")} />
+                  <SortHeader label="Capacity" active={sortKey === "capacity"} dir={sortDir} onClick={() => toggleSort("capacity")} />
+                  <th className="px-4 py-3 font-medium">Items (weight / points)</th>
+                  <SortHeader label="Optimal" active={sortKey === "optimal"} dir={sortDir} onClick={() => toggleSort("optimal")} />
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-16 text-center text-gray-500">
+                      No questions match the current filters.
+                    </td>
+                  </tr>
+                ) : (
+                  pageItems.map((q) => (
+                    <tr
+                      key={q.id}
+                      className="border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer"
+                      onClick={() => setSelectedId(q.id)}
+                    >
+                      <td className="px-4 py-3 font-semibold text-gray-900">#{q.id}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className={`capitalize ${phaseStyles[q.phase ?? ""] ?? ""}`}>
+                          {q.phase}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className={`capitalize ${difficultyStyles[q.difficulty ?? ""] ?? ""}`}>
+                          {q.difficulty}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-gray-900">{q.capacity}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          {q.balls.map((ball) => (
+                            <span
+                              key={ball.id}
+                              className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${ball.color}`}
+                              title={`Item ${ball.id}: weight ${ball.weight}, points ${ball.reward}`}
+                            >
+                              {ball.weight}/{ball.reward}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{optimalPoints(q)} pts</td>
+                      <td className="px-4 py-3">
+                        {overrides[q.id] ? (
+                          <Badge className="bg-blue-700 text-white">edited</Badge>
+                        ) : (
+                          <span className="text-gray-400">original</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedId(q.id)
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
 
-        {/* Pagination */}
-        {pageCount > 1 && (
-          <div className="flex items-center justify-center gap-4 mt-8">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={safePage === 0}
-              onClick={() => setPage(safePage - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" /> Previous
-            </Button>
-            <span className="text-sm text-gray-600">
-              Page {safePage + 1} of {pageCount}
+          {/* Table footer: range info, page size, pagination */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
+            <span className="text-sm text-gray-500">
+              Showing {sorted.length === 0 ? 0 : safePage * pageSize + 1}–
+              {Math.min((safePage + 1) * pageSize, sorted.length)} of {sorted.length}
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={safePage >= pageCount - 1}
-              onClick={() => setPage(safePage + 1)}
-            >
-              Next <ChevronRight className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                Rows per page:
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value))
+                    setPage(0)
+                  }}
+                  className="border border-gray-200 rounded-md px-2 py-1 text-sm bg-white"
+                >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage === 0}
+                  onClick={() => setPage(safePage - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" /> Prev
+                </Button>
+                <span className="text-sm text-gray-600 whitespace-nowrap">
+                  Page {safePage + 1} / {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage >= pageCount - 1}
+                  onClick={() => setPage(safePage + 1)}
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
-        )}
+        </Card>
       </div>
     </div>
   )
@@ -378,61 +490,38 @@ function FilterGroup({
   )
 }
 
-function QuestionCard({
-  question,
-  edited,
+function optimalPoints(q: Question): number {
+  return (q.solution ?? []).reduce(
+    (sum, id) => sum + (q.balls.find((b) => b.id === id)?.reward ?? 0),
+    0,
+  )
+}
+
+function SortHeader({
+  label,
+  active,
+  dir,
   onClick,
 }: {
-  question: Question
-  edited: boolean
+  label: string
+  active: boolean
+  dir: 1 | -1
   onClick: () => void
 }) {
   return (
-    <Card
-      className={`cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${
-        edited ? "border-blue-400 ring-2 ring-blue-100" : ""
-      }`}
+    <th
+      className="px-4 py-3 font-medium cursor-pointer select-none hover:text-gray-900"
       onClick={onClick}
     >
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <span className="font-bold text-gray-900">#{question.id}</span>
-          <div className="flex items-center gap-1.5">
-            {edited && (
-              <Badge className="bg-blue-600 text-white text-[10px] px-1.5">edited</Badge>
-            )}
-            <Badge variant="outline" className={`text-[10px] px-1.5 capitalize ${phaseStyles[question.phase ?? ""] ?? ""}`}>
-              {question.phase}
-            </Badge>
-            <Badge variant="outline" className={`text-[10px] px-1.5 capitalize ${difficultyStyles[question.difficulty ?? ""] ?? ""}`}>
-              {question.difficulty}
-            </Badge>
-          </div>
-        </div>
-        <div className="text-sm text-gray-600 mb-3">
-          Capacity: <span className="font-semibold text-gray-900">{question.capacity}</span>
-          <span className="mx-2 text-gray-300">|</span>
-          Optimal: <span className="font-semibold text-gray-900">
-            {(question.solution ?? []).reduce(
-              (sum, id) => sum + (question.balls.find((b) => b.id === id)?.reward ?? 0),
-              0,
-            )} pts
-          </span>
-        </div>
-        <div className="flex gap-1.5">
-          {question.balls.map((ball) => (
-            <div
-              key={ball.id}
-              className={`flex-1 rounded-lg py-1 text-center text-white ${ball.color}`}
-              title={`Item ${ball.id}: weight ${ball.weight}, points ${ball.reward}`}
-            >
-              <div className="text-[10px] leading-tight opacity-90">{ball.weight}w</div>
-              <div className="text-[11px] leading-tight font-bold">{ball.reward}p</div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+      <span className={`inline-flex items-center gap-1 ${active ? "text-blue-700" : ""}`}>
+        {label}
+        {active ? (
+          <span className="text-[10px]">{dir === 1 ? "▲" : "▼"}</span>
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-40" />
+        )}
+      </span>
+    </th>
   )
 }
 
