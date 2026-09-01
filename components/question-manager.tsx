@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import staticQuestions from "@/lib/static-questions.json"
 import type { Question } from "@/lib/static-loader"
 import { analyzeQuestion, rebuildQuestion, type Ball } from "@/lib/question-editing"
@@ -166,7 +167,7 @@ export default function QuestionManager() {
 
   if (!loaded) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent" />
       </div>
     )
@@ -198,13 +199,13 @@ export default function QuestionManager() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
+    <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <Package className="h-8 w-8 text-blue-600" />
+              <Package className="h-8 w-8 text-blue-700" />
               Question Bank Manager
             </h1>
             <p className="text-gray-600 mt-1">
@@ -213,6 +214,11 @@ export default function QuestionManager() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" asChild className="gap-2">
+              <Link href="/">
+                <ArrowLeft className="h-4 w-4" /> Home
+              </Link>
+            </Button>
             <Button variant="outline" onClick={exportJson} className="gap-2">
               <Download className="h-4 w-4" /> Export JSON
             </Button>
@@ -485,7 +491,7 @@ function QuestionEditor({
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
+    <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -591,7 +597,7 @@ function QuestionEditor({
                   <Button
                     onClick={handleSave}
                     disabled={!dirty}
-                    className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                    className="bg-blue-700 hover:bg-blue-800"
                   >
                     {savedFlash ? "Saved ✓" : "Save Changes"}
                   </Button>
