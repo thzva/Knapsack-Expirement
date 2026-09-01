@@ -241,7 +241,7 @@ export default function QuestionManager() {
     if (!currentTask) return
     const cur = new Set(exclusions[currentTask])
     checked.forEach((id) => (inPool ? cur.delete(id) : cur.add(id)))
-    updateExclusions({ ...exclusions, [currentTask]: [...cur] })
+    updateExclusions({ ...exclusions, [currentTask]: Array.from(cur) })
   }
 
   const updateOverride = (q: Question) => {
