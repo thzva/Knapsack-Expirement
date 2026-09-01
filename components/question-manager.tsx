@@ -94,8 +94,9 @@ export default function QuestionManager() {
   const [exclusions, setExclusions] = useState<Exclusions>(emptyExclusions())
   const [loaded, setLoaded] = useState(false)
 
-  // Selection flow: task first, then difficulty, then the question pool.
-  const [task, setTask] = useState<TestKey>("practice")
+  // Selection flow: pick a scope (whole bank or one test), then difficulty,
+  // then the question table.
+  const [task, setTask] = useState<TestKey | "all">("practice")
   const [difficulty, setDifficulty] = useState<Difficulty | "all">("all")
 
   // Bank browsing state
@@ -108,6 +109,9 @@ export default function QuestionManager() {
 
   // Editor
   const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  // Bulk row selection
+  const [checked, setChecked] = useState<Set<number>>(new Set())
 
   // Transient "Saved" indicator — everything persists automatically.
   const [savedFlash, setSavedFlash] = useState(false)
@@ -128,13 +132,18 @@ export default function QuestionManager() {
   )
   const questionById = useMemo(() => new Map(questions.map((q) => [q.id, q])), [questions])
 
-  const switchTask = (t: TestKey) => {
+  const switchTask = (t: TestKey | "all") => {
     setTask(t)
-    setPhaseFilter(DEFAULT_PHASE_FOR_TASK[t])
+    setPhaseFilter(t === "all" ? "all" : DEFAULT_PHASE_FOR_TASK[t])
     setPage(0)
   }
 
-  const excludedSet = useMemo(() => new Set(exclusions[task]), [exclusions, task])
+  const currentTask: TestKey | null = task === "all" ? null : task
+
+  const excludedSet = useMemo(
+    () => new Set(currentTask ? exclusions[currentTask] : []),
+    [exclusions, currentTask],
+  )
 
   // The full bank stays visible; excluded questions are only marked, not
   // hidden — exclusion affects the experiment's random draw, nothing else.
@@ -180,18 +189,59 @@ export default function QuestionManager() {
   }
 
   const excludeFromTask = (id: number) => {
-    if (excludedSet.has(id)) return
-    updateExclusions({ ...exclusions, [task]: [...exclusions[task], id] })
+    if (!currentTask || excludedSet.has(id)) return
+    updateExclusions({ ...exclusions, [currentTask]: [...exclusions[currentTask], id] })
   }
 
   const restoreToTask = (id: number) => {
-    updateExclusions({ ...exclusions, [task]: exclusions[task].filter((x) => x !== id) })
+    if (!currentTask) return
+    updateExclusions({ ...exclusions, [currentTask]: exclusions[currentTask].filter((x) => x !== id) })
   }
 
   const restoreAll = () => {
-    if (exclusions[task].length === 0) return
-    if (!window.confirm(`Restore all ${exclusions[task].length} excluded questions to the ${TEST_LABELS[task]} pool?`)) return
-    updateExclusions({ ...exclusions, [task]: [] })
+    if (!currentTask || exclusions[currentTask].length === 0) return
+    if (!window.confirm(`Restore all ${exclusions[currentTask].length} excluded questions to the ${TEST_LABELS[currentTask]} pool?`)) return
+    updateExclusions({ ...exclusions, [currentTask]: [] })
+  }
+
+  // ----- Bulk selection -----
+
+  const toggleChecked = (id: number) => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allPageChecked = pageItems.length > 0 && pageItems.every((q) => checked.has(q.id))
+  const togglePageChecked = () => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (allPageChecked) pageItems.forEach((q) => next.delete(q.id))
+      else pageItems.forEach((q) => next.add(q.id))
+      return next
+    })
+  }
+
+  // Apply a partial edit (difficulty / question set) to every checked question.
+  const bulkPatch = (patch: Partial<Question>) => {
+    const next = { ...overrides }
+    checked.forEach((id) => {
+      const base = questionById.get(id)
+      if (base) next[id] = { ...base, ...patch }
+    })
+    setOverrides(next)
+    saveOverrides(next)
+    flashSaved()
+  }
+
+  const bulkSetPool = (inPool: boolean) => {
+    if (!currentTask) return
+    const cur = new Set(exclusions[currentTask])
+    checked.forEach((id) => (inPool ? cur.delete(id) : cur.add(id)))
+    updateExclusions({ ...exclusions, [currentTask]: [...cur] })
   }
 
   const updateOverride = (q: Question) => {
@@ -309,10 +359,10 @@ export default function QuestionManager() {
           </div>
         </div>
 
-        {/* Step 1: task */}
+        {/* Step 1: scope */}
         <div className="mb-4">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Test</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Scope</div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             {TEST_KEYS.map((t) => (
               <button
                 key={t}
@@ -331,6 +381,19 @@ export default function QuestionManager() {
                 </div>
               </button>
             ))}
+            <button
+              onClick={() => switchTask("all")}
+              className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                task === "all"
+                  ? "border-blue-700 bg-blue-700 text-white"
+                  : "border-gray-200 bg-white text-gray-900 hover:border-gray-300"
+              }`}
+            >
+              <div className="text-sm font-semibold">All Questions</div>
+              <div className={`text-xs mt-0.5 ${task === "all" ? "text-blue-100" : "text-gray-500"}`}>
+                {data.questions.length} in total
+              </div>
+            </button>
           </div>
         </div>
 
@@ -362,10 +425,12 @@ export default function QuestionManager() {
           {/* Panel toolbar */}
           <div className="border-b border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm font-medium text-gray-900">
-              Question bank for {TEST_LABELS[task]} ({bankList.length})
-              {exclusions[task].length > 0 && (
+              {currentTask
+                ? `Question bank for ${TEST_LABELS[currentTask]} (${bankList.length})`
+                : `Full question bank (${bankList.length})`}
+              {currentTask && exclusions[currentTask].length > 0 && (
                 <span className="ml-2 font-normal text-gray-500">
-                  · {exclusions[task].length} excluded from the random draw
+                  · {exclusions[currentTask].length} excluded from the random draw
                 </span>
               )}
               <span
@@ -407,13 +472,61 @@ export default function QuestionManager() {
                   className="pl-8 h-8 w-32 text-sm"
                 />
               </div>
-              {exclusions[task].length > 0 && (
+              {currentTask && exclusions[currentTask].length > 0 && (
                 <button onClick={restoreAll} className="text-sm text-blue-700 hover:underline">
                   Restore all
                 </button>
               )}
             </div>
           </div>
+
+          {checked.size > 0 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 bg-blue-50 border-b border-blue-200 text-sm">
+              <span className="font-medium text-blue-900">{checked.size} selected</span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-gray-500">Difficulty:</span>
+                {DIFFICULTIES.map((d) => (
+                  <Button
+                    key={d}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 capitalize bg-white"
+                    onClick={() => bulkPatch({ difficulty: d })}
+                  >
+                    {d}
+                  </Button>
+                ))}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-gray-500">Question set:</span>
+                {PHASES.map((p) => (
+                  <Button
+                    key={p}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 capitalize bg-white"
+                    onClick={() => bulkPatch({ phase: p })}
+                  >
+                    {p}
+                  </Button>
+                ))}
+              </span>
+              {currentTask && (
+                <span className="flex items-center gap-1.5">
+                  <span className="text-gray-500">Pool:</span>
+                  <Button variant="outline" size="sm" className="h-7 px-2 bg-white" onClick={() => bulkSetPool(true)}>
+                    Include
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 px-2 bg-white" onClick={() => bulkSetPool(false)}>
+                    Exclude
+                  </Button>
+                </span>
+              )}
+              <button onClick={() => setChecked(new Set())} className="ml-auto text-gray-500 hover:underline">
+                Clear selection
+              </button>
+            </div>
+          )}
 
           <QuestionTable
             rows={pageItems}
@@ -422,8 +535,16 @@ export default function QuestionManager() {
             sortDir={sortDir}
             onSort={toggleSort}
             onEdit={(id) => setSelectedId(id)}
-            excludedIds={excludedSet}
-            onPoolToggle={(id, inPool) => (inPool ? restoreToTask(id) : excludeFromTask(id))}
+            checkedIds={checked}
+            onCheckToggle={toggleChecked}
+            allChecked={allPageChecked}
+            onCheckAll={togglePageChecked}
+            excludedIds={currentTask ? excludedSet : undefined}
+            onPoolToggle={
+              currentTask
+                ? (id, inPool) => (inPool ? restoreToTask(id) : excludeFromTask(id))
+                : undefined
+            }
           />
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
                 <span className="text-sm text-gray-500">
@@ -492,6 +613,10 @@ function QuestionTable({
   onEdit,
   excludedIds,
   onPoolToggle,
+  checkedIds,
+  onCheckToggle,
+  allChecked,
+  onCheckAll,
 }: {
   rows: Question[]
   overrides: Record<number, Question>
@@ -502,7 +627,14 @@ function QuestionTable({
   onEdit: (id: number) => void
   excludedIds?: Set<number>
   onPoolToggle?: (id: number, inPool: boolean) => void
+  checkedIds?: Set<number>
+  onCheckToggle?: (id: number) => void
+  allChecked?: boolean
+  onCheckAll?: () => void
 }) {
+  const showPool = Boolean(onPoolToggle)
+  const showCheck = Boolean(onCheckToggle)
+  const colCount = 8 + (showOrder ? 1 : 0) + (showPool ? 1 : 0) + (showCheck ? 1 : 0)
   const sortable = Boolean(onSort)
   const header = (label: string, key?: "id" | "capacity" | "optimal" | "difficulty") =>
     sortable && key ? (
@@ -528,6 +660,17 @@ function QuestionTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500">
+            {showCheck && (
+              <th className="pl-4 pr-1 py-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={Boolean(allChecked)}
+                  onChange={onCheckAll}
+                  className="h-4 w-4 accent-blue-700 align-middle cursor-pointer"
+                  title="Select all on this page"
+                />
+              </th>
+            )}
             {showOrder && <th className="px-4 py-3 font-medium w-10">#</th>}
             {header("ID", "id")}
             <th className="px-4 py-3 font-medium">Phase</th>
@@ -535,7 +678,7 @@ function QuestionTable({
             {header("Capacity", "capacity")}
             <th className="px-4 py-3 font-medium">Items (weight / points)</th>
             {header("Optimal", "optimal")}
-            <th className="px-4 py-3 font-medium">In Pool</th>
+            {showPool && <th className="px-4 py-3 font-medium">In Pool</th>}
             <th className="px-4 py-3 font-medium">Status</th>
             <th className="px-4 py-3 font-medium text-right">Actions</th>
           </tr>
@@ -543,7 +686,7 @@ function QuestionTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={showOrder ? 10 : 9} className="px-4 py-16 text-center text-gray-500">
+              <td colSpan={colCount} className="px-4 py-16 text-center text-gray-500">
                 No questions to show.
               </td>
             </tr>
@@ -558,6 +701,16 @@ function QuestionTable({
                 } ${excludedIds?.has(q.id) ? "opacity-50" : ""}`}
                 onClick={() => onEdit(q.id)}
               >
+                {showCheck && (
+                  <td className="pl-4 pr-1 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(checkedIds?.has(q.id))}
+                      onChange={() => onCheckToggle?.(q.id)}
+                      className="h-4 w-4 accent-blue-700 align-middle cursor-pointer"
+                    />
+                  </td>
+                )}
                 {showOrder && <td className="px-4 py-3 text-gray-400">{i + 1}</td>}
                 <td className="px-4 py-3 font-medium text-gray-900">#{q.id}</td>
                 <td className="px-4 py-3 text-gray-500 capitalize">{q.phase}</td>
@@ -569,19 +722,21 @@ function QuestionTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-900">{optimalPoints(q)}</td>
-                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={!excludedIds?.has(q.id)}
-                    onChange={(e) => onPoolToggle?.(q.id, e.target.checked)}
-                    className="h-4 w-4 accent-blue-700 align-middle cursor-pointer"
-                    title={
-                      excludedIds?.has(q.id)
-                        ? "Excluded from this test's random draw — tick to put it back"
-                        : "In this test's random draw — untick to exclude it"
-                    }
-                  />
-                </td>
+                {showPool && (
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={!excludedIds?.has(q.id)}
+                      onChange={(e) => onPoolToggle?.(q.id, e.target.checked)}
+                      className="h-4 w-4 accent-blue-700 align-middle cursor-pointer"
+                      title={
+                        excludedIds?.has(q.id)
+                          ? "Excluded from this test's random draw — tick to put it back"
+                          : "In this test's random draw — untick to exclude it"
+                      }
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-2">
                     {overrides[q.id] ? (
@@ -631,6 +786,7 @@ function QuestionEditor({
   const [difficulty, setDifficulty] = useState<Difficulty>(
     (current.difficulty as Difficulty) ?? "easy",
   )
+  const [phase, setPhase] = useState<Phase>((current.phase as Phase) ?? "training")
   // Answer key override: null = follow the computed optimum; an array = the
   // manually chosen answer key.
   const [manualSolution, setManualSolution] = useState<number[] | null>(() => {
@@ -670,9 +826,9 @@ function QuestionEditor({
     setManualSolution(same ? null : next)
   }
 
-  // The difficulty selector and manual answer key win over the auto-computed values.
+  // The difficulty/set selectors and manual answer key win over the auto-computed values.
   const draft = useMemo(() => {
-    const base = { ...rebuildQuestion(current, balls, capacity), difficulty }
+    const base = { ...rebuildQuestion(current, balls, capacity), difficulty, phase }
     if (manualSolution) {
       return {
         ...base,
@@ -681,12 +837,13 @@ function QuestionEditor({
       }
     }
     return base
-  }, [current, balls, capacity, difficulty, manualSolution, keyTotals])
+  }, [current, balls, capacity, difficulty, phase, manualSolution, keyTotals])
 
   const sortedIds = (ids?: number[]) => [...(ids ?? [])].sort((a, b) => a - b).join(",")
   const dirty =
     capacity !== current.capacity ||
     difficulty !== current.difficulty ||
+    phase !== current.phase ||
     JSON.stringify(balls) !== JSON.stringify(current.balls) ||
     sortedIds(draft.solution) !== sortedIds(current.solution)
 
@@ -707,6 +864,7 @@ function QuestionEditor({
     setCapacity(original.capacity)
     setBalls(original.balls.map((b) => ({ ...b })))
     setDifficulty((original.difficulty as Difficulty) ?? "easy")
+    setPhase((original.phase as Phase) ?? "training")
     const auto = analyzeQuestion(original.balls, original.capacity).solution
     const stored = original.solution ?? []
     const same = stored.length === auto.length && stored.every((id) => auto.includes(id))
@@ -724,7 +882,7 @@ function QuestionEditor({
               <ArrowLeft className="h-4 w-4" /> Back to list
             </Button>
             <h1 className="text-2xl font-semibold text-gray-900">Question #{current.id}</h1>
-            <span className="text-sm text-gray-500 capitalize">{current.phase}</span>
+            <span className="text-sm text-gray-500 capitalize">{draft.phase}</span>
             <span className="text-sm text-gray-500 capitalize">{draft.difficulty}</span>
             {isEdited && <Badge className="bg-blue-700 text-white">edited</Badge>}
           </div>
@@ -780,6 +938,20 @@ function QuestionEditor({
                           Use computed: {analysis.computedDifficulty}
                         </button>
                       )}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-600 block mb-1">
+                      Question Set
+                    </label>
+                    <select
+                      value={phase}
+                      onChange={(e) => setPhase(e.target.value as Phase)}
+                      className="border border-gray-200 rounded-md px-3 h-10 text-sm bg-white capitalize"
+                    >
+                      <option value="training">Training</option>
+                      <option value="benchmark">Benchmark</option>
+                      <option value="prediction">Prediction</option>
+                    </select>
                   </div>
                 </div>
 

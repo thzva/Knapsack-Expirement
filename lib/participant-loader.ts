@@ -88,9 +88,9 @@ function loadQuestionsForPhase(
   // moves the question into the right sampling bucket. Questions excluded in
   // the manager are dropped from the test's pool entirely.
   const excluded = excludedFor ? getExcludedIds(excludedFor) : null;
-  const phaseQuestions = withOverrides((staticQuestions.questions as Question[]).filter(
+  const phaseQuestions = withOverrides(staticQuestions.questions as Question[]).filter(
     (q) => q.phase === phase && q.balls.length === NUM_BALLS && !excluded?.has(q.id)
-  ));
+  );
 
   return {
     easy: phaseQuestions.filter(q => q.difficulty === 'easy'),
@@ -201,13 +201,15 @@ export function getSkillTestQuestions(): Question[] {
  */
 export function getBenchmarkPhaseQuestions(participantId?: string | null): Question[] {
   const excluded = getExcludedIds('benchmark');
-  const allQuestions = (staticQuestions.questions as Question[]).filter(
+  // Overrides first, then filter — so an edited question set (phase) moves
+  // the question into the right pool.
+  const allQuestions = withOverrides(staticQuestions.questions as Question[]).filter(
     (q) => q.phase === 'benchmark' && q.balls.length === NUM_BALLS && !excluded.has(q.id)
   );
   // Seed with participantId so a refresh returns the SAME 30 questions —
   // otherwise already-confirmed answer keys wouldn't match the new shuffle.
   const seed = seedFor(participantId, 'benchmark');
-  return withOverrides(shuffle(allQuestions, seed).slice(0, 30));
+  return shuffle(allQuestions, seed).slice(0, 30);
 }
 
 /**
@@ -215,11 +217,11 @@ export function getBenchmarkPhaseQuestions(participantId?: string | null): Quest
  */
 export function getPredictionPhaseQuestions(participantId?: string | null): Question[] {
   const excluded = getExcludedIds('prediction');
-  const allQuestions = (staticQuestions.questions as Question[]).filter(
+  const allQuestions = withOverrides(staticQuestions.questions as Question[]).filter(
     (q) => q.phase === 'prediction' && q.balls.length === NUM_BALLS && !excluded.has(q.id)
   );
   const seed = seedFor(participantId, 'prediction');
-  return withOverrides(shuffle(allQuestions, seed).slice(0, 30));
+  return shuffle(allQuestions, seed).slice(0, 30);
 }
 
 /**
