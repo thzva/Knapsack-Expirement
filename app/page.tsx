@@ -2,7 +2,7 @@
 
 import { useEffect } from "react"
 import Link from "next/link"
-import { ArrowRight, ClipboardList, Database } from "lucide-react"
+import { ArrowRight, ClipboardList, Database, Layers } from "lucide-react"
 
 export default function HomePage() {
   // Wake the Render backend (free tier sleeps when idle, cold start can take
@@ -30,6 +30,9 @@ export default function HomePage() {
             <Link href="/questions" className="text-gray-600 hover:text-gray-900">
               Question Bank
             </Link>
+            <a href="/tol/" className="text-gray-600 hover:text-gray-900">
+              Tower of London
+            </a>
           </nav>
         </div>
       </header>
@@ -47,7 +50,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Link
               href="/experiment"
               className="group border border-gray-200 rounded-lg p-8 hover:border-blue-600 hover:shadow-sm transition-colors bg-white"
@@ -83,6 +86,24 @@ export default function HomePage() {
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </span>
             </Link>
+
+            <a
+              href="/tol/"
+              className="group border border-gray-200 rounded-lg p-8 hover:border-blue-600 hover:shadow-sm transition-colors bg-white"
+            >
+              <div className="w-10 h-10 rounded bg-blue-50 text-blue-700 flex items-center justify-center mb-5">
+                <Layers className="h-5 w-5" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Tower of London</h2>
+              <p className="text-sm text-gray-600 leading-relaxed mb-6">
+                A separate planning experiment: rearrange colored balls across three pegs to
+                match a target arrangement in the minimum number of moves.
+              </p>
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700">
+                Start Tower of London
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </a>
           </div>
 
           {/* Facts */}
